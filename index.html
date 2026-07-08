@@ -2207,76 +2207,168 @@
 
     .leaderboard-empty { padding: 2.5rem 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
 
-    .leaderboard-analysis-card {
-      margin-top: 1rem;
-      padding: 1rem;
-    }
+    .leaderboard-analysis-card { margin-top: 1rem; padding: 1rem; }
 
-    .leaderboard-analysis-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 0.9rem;
+    .leaderboard-analysis-head { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; }
+    .leaderboard-analysis-icon {
+      flex-shrink: 0; width: 38px; height: 38px; border-radius: 11px;
+      display: grid; place-items: center; font-size: 1.15rem;
+      background: linear-gradient(145deg, rgba(0,230,118,0.16), rgba(59,130,246,0.12));
+      border: 1px solid rgba(0,230,118,0.22); box-shadow: 0 0 18px rgba(0,230,118,0.08);
     }
+    .leaderboard-analysis-title { font-family: var(--font-heading); font-weight: 900; font-size: 0.96rem; color: var(--text-primary); letter-spacing: -0.2px; }
+    .leaderboard-analysis-subtitle { margin-top: 3px; font-size: 0.74rem; line-height: 1.45; color: var(--text-secondary); }
 
-    .leaderboard-analysis-title {
-      font-family: var(--font-heading);
-      font-weight: 900;
-      font-size: 0.96rem;
-      color: var(--text-primary);
+    /* Per-player breakdown rows */
+    .analysis-rows { display: flex; flex-direction: column; gap: 9px; }
+    .analysis-row {
+      background: rgba(255,255,255,0.018); border: 1px solid var(--border-color);
+      border-radius: var(--radius-md); padding: 12px 13px; transition: var(--transition);
     }
-
-    .leaderboard-analysis-subtitle {
-      margin-top: 3px;
-      font-size: 0.74rem;
-      line-height: 1.45;
-      color: var(--text-secondary);
+    .analysis-row:hover { background: rgba(255,255,255,0.032); border-color: var(--border-hover); }
+    .analysis-row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .analysis-row-rank {
+      flex-shrink: 0; width: 25px; height: 25px; border-radius: 7px;
+      display: grid; place-items: center; font-family: var(--font-heading);
+      font-weight: 800; font-size: 0.74rem; color: var(--text-secondary);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); font-variant-numeric: tabular-nums;
     }
-
-    .leaderboard-analysis-table-wrap {
-      overflow-x: auto;
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
+    .analysis-row-name {
+      flex: 1 1 auto; min-width: 0; font-family: var(--font-heading); font-weight: 800;
+      font-size: 0.92rem; color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-
-    .leaderboard-analysis-table {
-      width: 100%;
-      min-width: 830px;
-      border-collapse: collapse;
-      text-align: left;
+    .analysis-row-meta { flex-shrink: 0; font-size: 0.68rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .analysis-row-total {
+      flex-shrink: 0; display: inline-flex; align-items: baseline; gap: 4px;
+      padding: 4px 11px; border-radius: var(--radius-sm);
+      background: linear-gradient(145deg, rgba(0,230,118,0.16), rgba(0,230,118,0.05));
+      border: 1px solid rgba(0,230,118,0.24);
     }
+    .analysis-row-total-val { font-family: var(--font-heading); font-weight: 900; font-size: 1rem; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1; }
+    .analysis-row-total-unit { font-size: 0.6rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
 
-    .leaderboard-analysis-table th {
-      font-family: var(--font-heading);
-      font-size: 0.64rem;
-      font-weight: 800;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border-color);
-      background: rgba(255,255,255,0.025);
-      white-space: nowrap;
+    /* Category tiles */
+    .analysis-row-tiles { display: flex; flex-wrap: wrap; gap: 7px; }
+    .analysis-tile {
+      flex: 1 1 96px; min-width: 96px; border-radius: 9px; padding: 8px 10px 8px 12px;
+      border: 1px solid var(--border-color); background: rgba(255,255,255,0.02);
+      position: relative; overflow: hidden;
     }
+    .analysis-tile::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+    .analysis-tile.exact   { background: rgba(0,230,118,0.06);  border-color: rgba(0,230,118,0.18); }
+    .analysis-tile.exact::before   { background: linear-gradient(180deg, #39F58B, #00B35E); }
+    .analysis-tile.outcome { background: rgba(232,197,71,0.06); border-color: rgba(232,197,71,0.18); }
+    .analysis-tile.outcome::before { background: linear-gradient(180deg, #F7E57F, #C8A63A); }
+    .analysis-tile.approx  { background: rgba(59,130,246,0.06); border-color: rgba(59,130,246,0.18); }
+    .analysis-tile.approx::before  { background: linear-gradient(180deg, #7EC8FF, #3B82F6); }
+    .analysis-tile.blocked { background: rgba(255,77,94,0.05);  border-color: rgba(255,77,94,0.16); }
+    .analysis-tile.blocked::before { background: linear-gradient(180deg, rgba(255,138,150,0.95), rgba(255,77,94,0.7)); }
+    .analysis-tile.bonus   { background: rgba(255,122,26,0.06); border-color: rgba(255,122,26,0.2); }
+    .analysis-tile.bonus::before   { background: linear-gradient(180deg, #FFB074, #FF7A1A); }
 
-    .leaderboard-analysis-table td {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.055);
-      font-size: 0.82rem;
-      vertical-align: middle;
-    }
+    .analysis-tile-top { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; min-width: 0; }
+    .analysis-tile-icon { font-size: 0.78rem; line-height: 1; flex-shrink: 0; }
+    .analysis-tile-label { font-size: 0.6rem; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .leaderboard-analysis-table tr:last-child td { border-bottom: none; }
-    .leaderboard-analysis-table .num { text-align: right; white-space: nowrap; }
-    .leaderboard-analysis-table .player { font-weight: 800; color: var(--text-primary); min-width: 130px; }
-    .leaderboard-analysis-table .muted { color: var(--text-muted); }
-    .leaderboard-analysis-table .points { font-family: var(--font-heading); font-weight: 900; color: #fff; }
+    .analysis-tile-stats { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+    .analysis-tile-pts { font-family: var(--font-heading); font-weight: 900; font-size: 0.92rem; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+    .analysis-tile-pts-unit { font-size: 0.6rem; font-weight: 700; color: var(--text-muted); margin-left: 1px; }
+    .analysis-tile-sep { color: var(--text-muted); font-size: 0.7rem; font-weight: 700; }
+    .analysis-tile-count { font-family: var(--font-heading); font-weight: 800; font-size: 0.78rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .analysis-tile-count-x { font-size: 0.6rem; color: var(--text-muted); margin-left: 1px; }
+    .analysis-tile-count-sub { font-size: 0.6rem; color: var(--text-muted); }
+    .analysis-tile.exact   .analysis-tile-pts { color: #5BFFA0; }
+    .analysis-tile.outcome .analysis-tile-pts { color: #F7E57F; }
+    .analysis-tile.approx  .analysis-tile-pts { color: #8AB4FF; }
+    .analysis-tile.blocked .analysis-tile-pts { color: #FF8A96; }
+    .analysis-tile.bonus   .analysis-tile-pts { color: #FFB074; }
+
     .analysis-note {
-      margin-top: 0.75rem;
-      font-size: 0.72rem;
-      line-height: 1.45;
-      color: var(--text-muted);
+      margin-top: 0.85rem; font-size: 0.71rem; line-height: 1.5; color: var(--text-muted);
+      background: rgba(255,255,255,0.018); border: 1px dashed var(--border-color);
+      border-radius: var(--radius-sm); padding: 9px 12px;
+    }
+
+    /* Analysis tile tıklanabilir — maç listesi popover'ı */
+    .analysis-tile.is-clickable { cursor: pointer; transition: var(--transition); }
+    .analysis-tile.is-clickable:hover { filter: brightness(1.16); transform: translateY(-1px); border-color: var(--border-hover); }
+    .analysis-tile.is-clickable:active { transform: translateY(0); filter: brightness(1.08); }
+    .analysis-tile-tap { font-size: 0.55rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px; opacity: 0.8; }
+    .analysis-tile.is-clickable:hover .analysis-tile-tap { color: var(--text-secondary); }
+
+    /* Analysis maç listesi popover — form-dot popover tarzı, ama liste halinde */
+    .analysis-matches-pop { position: fixed; inset: 0; z-index: 1450; }
+    .analysis-matches-pop.hidden { display: none; }
+    .analysis-matches-card {
+      position: absolute;
+      background: var(--bg-card);
+      border: 1px solid var(--border-hover);
+      border-radius: 14px;
+      padding: 14px 16px 13px;
+      box-shadow: var(--shadow-lg);
+      max-width: 340px;
+      min-width: 270px;
+      max-height: 70vh;
+      display: flex; flex-direction: column;
+      animation: formdot-pop-in .18s cubic-bezier(0.23,1,0.32,1);
+    }
+    .analysis-matches-card::after {
+      content: ""; position: absolute; top: -7px;
+      left: var(--arrow-left, 22px);
+      width: 12px; height: 12px;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border-hover);
+      border-top: 1px solid var(--border-hover);
+      transform: rotate(45deg);
+    }
+    .analysis-matches-card.flip-down::after {
+      top: auto; bottom: -7px;
+      border-top: none; border-bottom: 1px solid var(--border-hover);
+      transform: rotate(225deg);
+    }
+    .analysis-matches-head {
+      display: flex; align-items: center; gap: 7px;
+      font-family: var(--font-heading); font-weight: 800; font-size: 0.82rem;
+      color: var(--text-primary); margin-bottom: 10px; padding-right: 22px;
+    }
+    .analysis-matches-head .head-count {
+      font-size: 0.66rem; font-weight: 700; color: var(--text-muted);
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);
+      border-radius: 999px; padding: 1px 8px;
+    }
+    .analysis-matches-list {
+      display: flex; flex-direction: column; gap: 6px;
+      overflow-y: auto; padding-right: 3px;
+    }
+    .analysis-matches-list::-webkit-scrollbar { width: 5px; }
+    .analysis-matches-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }
+    .analysis-match-item {
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border-color);
+      border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px;
+    }
+    .analysis-match-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .analysis-match-item .form-dot { flex-shrink: 0; width: 16px; height: 16px; font-size: 0.5rem; }
+    .analysis-match-teams {
+      font-family: var(--font-heading); font-weight: 700; font-size: 0.8rem;
+      color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0;
+    }
+    .analysis-match-pts {
+      flex-shrink: 0; font-family: var(--font-heading); font-weight: 800; font-size: 0.72rem;
+      padding: 1px 7px; border-radius: 999px; font-variant-numeric: tabular-nums;
+    }
+    .analysis-match-pts.positive { background: rgba(0,230,118,0.14); color: var(--accent); border: 1px solid rgba(0,230,118,0.3); }
+    .analysis-match-pts.zero { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid var(--border-color); }
+    .analysis-match-pts.bonus { background: rgba(255,122,26,0.14); color: #FFB074; border: 1px solid rgba(255,122,26,0.3); }
+    .analysis-match-meta {
+      font-size: 0.68rem; color: var(--text-muted); font-weight: 600;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .analysis-match-meta .pred { color: var(--text-secondary); font-weight: 700; }
+    .analysis-match-meta .result { color: var(--accent-gold); font-weight: 800; }
+    .analysis-match-meta .blocked-tag { color: #FF8A96; font-weight: 700; font-size: 0.62rem; }
+    .analysis-matches-empty {
+      font-size: 0.74rem; color: var(--text-muted); text-align: center; padding: 14px 0; font-style: italic;
     }
 
     @media (max-width: 520px) {
@@ -2285,6 +2377,8 @@
       .leaderboard-table td { padding: 11px 12px; }
       .leaderboard-table th { padding: 12px; }
       .leaderboard-analysis-card { padding: 0.85rem; }
+      .analysis-row-meta { display: none; }
+      .analysis-tile { flex: 1 1 calc(50% - 3.5px); min-width: calc(50% - 3.5px); }
     }
 
     /* Admin Cards */
@@ -3920,6 +4014,7 @@
 
       <div class="leaderboard-analysis-card">
         <div class="leaderboard-analysis-head">
+          <div class="leaderboard-analysis-icon">📊</div>
           <div>
             <div class="leaderboard-analysis-title">Detaylı Puan Analizi</div>
             <div class="leaderboard-analysis-subtitle">Tam skor, sonuç ve yaklaşma isabetleri ayrı hesaplanır; mevcut puan durumu toplamına dokunmaz.</div>
@@ -4294,6 +4389,15 @@
       <div id="formdot-pop-teams" class="formdot-pop-teams"></div>
       <div id="formdot-pop-date" class="formdot-pop-date"></div>
       <div id="formdot-pop-detail" class="formdot-pop-detail"></div>
+    </div>
+  </div>
+
+  <!-- Analysis Matches Popover (Kategoriye tıklayınca o kategorideki maçlar listelenir) -->
+  <div id="analysis-matches-pop" class="analysis-matches-pop hidden" onclick="if(event.target.id==='analysis-matches-pop') closeAnalysisMatchesPop()">
+    <div class="analysis-matches-card" onclick="event.stopImmediatePropagation()">
+      <button class="formdot-pop-close" onclick="closeAnalysisMatchesPop()" aria-label="Kapat">×</button>
+      <div id="analysis-matches-head" class="analysis-matches-head"></div>
+      <div id="analysis-matches-list" class="analysis-matches-list"></div>
     </div>
   </div>
 
@@ -6465,6 +6569,152 @@
       if (formDotCleanup) { formDotCleanup(); formDotCleanup = null; }
     }
 
+    // ================== ANALYSIS TILE POPOVER (kategori → maç listesi) ==================
+    // Her oyuncunun puan analizi kutucuğuna (Tam Skor / Sonuç / Yaklaşma / Bloke / Bonus)
+    // tıklanınca o kategorideki maçlar liste halinde popover olarak açılır.
+    const analysisMatchesRegistry = []; // her row için { matches:[], exact:[], approx:[], blocked:[], outcome:[], bonus:[] }
+
+    // getUserResultHistory çıktısını zenginleştir: her maça approxBlocked / approxAwarded / bonusPoints ekle.
+    function getAnalysisMatchesForUser(uid) {
+      const history = getUserResultHistory(uid);
+      if (!history.length) return history;
+      const matchById = Object.fromEntries(matches.map(m => [m.id, m]));
+      const archiveSource = (optimizedMode && Array.isArray(breakdownArchiveDocs))
+        ? breakdownArchiveDocs
+        : (optimizedMode ? archiveDocs : null);
+      const archiveById = {};
+      if (Array.isArray(archiveSource)) {
+        archiveSource.forEach(m => { archiveById[m.id] = m; });
+      }
+      return history.map(item => {
+        const match = matchById[item.matchId] || archiveById[item.matchId];
+        let matchPreds = null;
+        if (match) {
+          if (Array.isArray(match.scoreboard)) {
+            matchPreds = match.scoreboard.map(e => ({ homePred: e.h, awayPred: e.a }));
+          } else {
+            matchPreds = allPredictions.filter(q => q.matchId === match.id);
+          }
+        }
+        const parts = match ? predictionPointParts(item.homePred, item.awayPred, match, matchPreds) : null;
+        return Object.assign({}, item, {
+          approxBlocked: parts ? !!parts.approxBlocked : false,
+          approxAwarded: parts ? !!parts.approxAwarded : false,
+          bonusPoints: parts ? parts.bonusPoints : 0
+        });
+      });
+    }
+
+    // Bir kategori için maç listesini döndür (zenginleştirilmiş history'den filtrele).
+    function filterAnalysisMatches(matchesAll, category) {
+      if (category === 'exact')   return matchesAll.filter(m => m.kind === 'exact');
+      if (category === 'outcome') return matchesAll.filter(m => m.kind === 'outcome');
+      if (category === 'approx')  return matchesAll.filter(m => m.kind === 'approx' && m.approxAwarded);
+      if (category === 'blocked') return matchesAll.filter(m => m.kind === 'approx' && m.approxBlocked);
+      if (category === 'bonus')   return matchesAll.filter(m => m.bonusPoints > 0);
+      return [];
+    }
+
+    const analysisCategoryMeta = {
+      exact:   { icon: '🎯', label: 'Tam Skor' },
+      outcome: { icon: '✅', label: 'Sonuç' },
+      approx:  { icon: '📐', label: 'Yaklaşma' },
+      blocked: { icon: '🚫', label: 'Bloke' },
+      bonus:   { icon: '🔥', label: 'Bonus' }
+    };
+    const analysisKindLabels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+
+    let analysisPopCleanup = null;
+    function showAnalysisTileMatches(tileEl, regIdx, category) {
+      const entry = analysisMatchesRegistry[regIdx];
+      if (!entry) return;
+      const matchList = filterAnalysisMatches(entry.matches, category);
+      const meta = analysisCategoryMeta[category] || { icon: '▸', label: category };
+
+      const pop = document.getElementById('analysis-matches-pop');
+      if (!pop) return;
+      if (analysisPopCleanup) { analysisPopCleanup(); analysisPopCleanup = null; }
+
+      const headEl = document.getElementById('analysis-matches-head');
+      const listEl = document.getElementById('analysis-matches-list');
+
+      headEl.innerHTML = `${meta.icon} ${meta.label}
+        <span class="head-count">${matchList.length} maç</span>`;
+
+      if (!matchList.length) {
+        listEl.innerHTML = `<div class="analysis-matches-empty">Bu kategoride henüz maç yok.</div>`;
+      } else {
+        listEl.innerHTML = matchList.map(m => {
+          const pts = m.pts > 0 ? `+${formatPoints(m.pts)}` : '0';
+          const ptsClass = category === 'bonus' ? 'bonus' : (m.pts > 0 ? 'positive' : 'zero');
+          const dateStr = m.datetime ? formatMatchTime(m.datetime) : '—';
+          const teams = `${m.homeTeam != null ? m.homeTeam : '?'} — ${m.awayTeam != null ? m.awayTeam : '?'}`;
+          const pred = `${m.homePred != null ? m.homePred : '?'}-${m.awayPred != null ? m.awayPred : '?'}`;
+          const result = `${m.homeScore != null ? m.homeScore : '?'}-${m.awayScore != null ? m.awayScore : '?'}`;
+          const blockedTag = category === 'blocked'
+            ? `<span class="blocked-tag">• tam skor var, yarım puan verilmedi</span>` : '';
+          const bonusNote = category === 'bonus'
+            ? `<span class="blocked-tag" style="color:#FFB074">• yalnız sen bildin +3</span>` : '';
+          return `
+            <div class="analysis-match-item">
+              <div class="analysis-match-top">
+                <span class="form-dot ${m.kind}">${analysisKindLabels[m.kind] || '?'}</span>
+                <span class="analysis-match-teams">${escapeHTML(teams)}</span>
+                <span class="analysis-match-pts ${ptsClass}">${pts}</span>
+              </div>
+              <div class="analysis-match-meta">
+                <span>${escapeHTML(dateStr)}</span>
+                <span class="pred">Tahmin ${escapeHTML(pred)}</span>
+                <span class="result">Sonuç ${escapeHTML(result)}</span>
+                ${blockedTag}${bonusNote}
+              </div>
+            </div>`;
+        }).join('');
+      }
+
+      pop.classList.remove('hidden');
+
+      // Akıllı konumlandırma: tıklanan kutucuğun yakınına yerleştir (form-dot popover mantığı)
+      requestAnimationFrame(() => {
+        const card = pop.querySelector('.analysis-matches-card');
+        if (!card || !tileEl) return;
+        const rect = tileEl.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 12;
+
+        const placeBelow = rect.bottom + 10 + cardRect.height < vh - margin;
+        let top = placeBelow ? rect.bottom + 10 : rect.top - cardRect.height - 10;
+        let left = rect.left + rect.width / 2 - cardRect.width / 2;
+
+        left = Math.max(margin, Math.min(left, vw - cardRect.width - margin));
+        top = Math.max(margin, Math.min(top, vh - cardRect.height - margin));
+
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+        card.classList.toggle('flip-down', !placeBelow);
+
+        const arrowLeft = Math.max(16, Math.min(rect.left + rect.width / 2 - left, cardRect.width - 16));
+        card.style.setProperty('--arrow-left', arrowLeft + 'px');
+      });
+
+      const onEsc = (e) => { if (e.key === 'Escape') closeAnalysisMatchesPop(); };
+      const onScroll = () => closeAnalysisMatchesPop();
+      document.addEventListener('keydown', onEsc);
+      window.addEventListener('scroll', onScroll, { passive: true });
+      analysisPopCleanup = () => {
+        document.removeEventListener('keydown', onEsc);
+        window.removeEventListener('scroll', onScroll);
+      };
+    }
+
+    function closeAnalysisMatchesPop() {
+      const pop = document.getElementById('analysis-matches-pop');
+      if (pop) pop.classList.add('hidden');
+      if (analysisPopCleanup) { analysisPopCleanup(); analysisPopCleanup = null; }
+    }
+
     async function ensureLeaderboardFormData() {
       if (!optimizedMode) return;
       if (breakdownArchiveDocs !== null || formArchiveEnsureStarted) return;
@@ -6586,49 +6836,66 @@
       }
 
       const loadingNote = optimizedMode && breakdownArchiveDocs === null
-        ? `<div class="analysis-note">Arşiv detayları yükleniyor; tablo tamamlanınca otomatik güncellenir.</div>`
+        ? `<div class="analysis-note">Arşiv detayları yükleniyor; liste tamamlınınca otomatik güncellenir.</div>`
         : '';
 
+      // Her oyuncu için kategori bazında maç listelerini hazırla (popover için).
+      analysisMatchesRegistry.length = 0;
+
+      const analysisTile = (kind, icon, label, countHTML, points, prefix, regIdx, category, hasMatches) => {
+        const pts = (points == null || points === '')
+          ? ''
+          : `<span class="analysis-tile-pts">${prefix || ''}${formatPoints(points)}<span class="analysis-tile-pts-unit">p</span></span>`;
+        const sep = (pts && countHTML) ? `<span class="analysis-tile-sep">·</span>` : '';
+        const clickable = hasMatches ? 'is-clickable' : '';
+        const onclick = hasMatches ? `onclick="event.stopPropagation(); showAnalysisTileMatches(this, ${regIdx}, '${category}')"` : '';
+        const tap = hasMatches ? `<div class="analysis-tile-tap">👆 maçlar</div>` : '';
+        return `
+          <div class="analysis-tile ${kind} ${clickable}" ${onclick}>
+            <div class="analysis-tile-top">
+              <span class="analysis-tile-icon">${icon}</span>
+              <span class="analysis-tile-label">${label}</span>
+            </div>
+            <div class="analysis-tile-stats">${pts}${sep}${countHTML || ''}</div>
+            ${tap}
+          </div>`;
+      };
+
       container.innerHTML = `
-        <div class="leaderboard-analysis-table-wrap">
-          <table class="leaderboard-analysis-table">
-            <thead>
-              <tr>
-                <th>Oyuncu</th>
-                <th class="num">Tahmin</th>
-                <th class="num">Tam skor</th>
-                <th class="num">Tam skor p.</th>
-                <th class="num">Sonuç</th>
-                <th class="num">Sonuç p.</th>
-                <th class="num">Yaklaşma</th>
-                <th class="num">Yaklaşma p.</th>
-                <th class="num">Bloke</th>
-                <th class="num">Bloke p.</th>
-                <th class="num">Bonus</th>
-                <th class="num">Toplam</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map(row => `
-                <tr>
-                  <td class="player">${escapeHTML(row.displayName)}</td>
-                  <td class="num">${row.predictions}</td>
-                  <td class="num">${row.exactCount}</td>
-                  <td class="num points">${formatPoints(row.exactPoints)}</td>
-                  <td class="num">${row.outcomeCount}</td>
-                  <td class="num points">${formatPoints(row.outcomePoints)}</td>
-                  <td class="num">${row.approxAwardedCount}<span class="muted"> / ${row.approxCount}</span></td>
-                  <td class="num points">${formatPoints(row.approxPoints)}</td>
-                  <td class="num">${row.approxBlockedCount}</td>
-                  <td class="num points">${formatPoints(row.approxBlockedPoints)}</td>
-                  <td class="num points">${formatPoints(row.bonusPoints)}</td>
-                  <td class="num points">${formatPoints(row.totalPoints)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+        <div class="analysis-rows">
+          ${rows.map((row, idx) => {
+            const userMatches = getAnalysisMatchesForUser(row.uid);
+            const cats = {
+              exact:   userMatches.filter(m => m.kind === 'exact'),
+              outcome: userMatches.filter(m => m.kind === 'outcome'),
+              approx:  userMatches.filter(m => m.kind === 'approx' && m.approxAwarded),
+              blocked: userMatches.filter(m => m.kind === 'approx' && m.approxBlocked),
+              bonus:   userMatches.filter(m => m.bonusPoints > 0)
+            };
+            analysisMatchesRegistry.push({ matches: userMatches, ...cats });
+            const regIdx = analysisMatchesRegistry.length - 1;
+            return `
+            <div class="analysis-row">
+              <div class="analysis-row-head">
+                <div class="analysis-row-rank">${idx + 1}</div>
+                <div class="analysis-row-name">${escapeHTML(row.displayName)}</div>
+                <div class="analysis-row-meta">🗳️ ${row.predictions} tahmin</div>
+                <div class="analysis-row-total">
+                  <span class="analysis-row-total-val">${formatPoints(row.totalPoints)}</span>
+                  <span class="analysis-row-total-unit">puan</span>
+                </div>
+              </div>
+              <div class="analysis-row-tiles">
+                ${analysisTile('exact', '🎯', 'Tam Skor', `<span class="analysis-tile-count">${row.exactCount}<span class="analysis-tile-count-x">×</span></span>`, row.exactPoints, null, regIdx, 'exact', cats.exact.length > 0)}
+                ${analysisTile('outcome', '✅', 'Sonuç', `<span class="analysis-tile-count">${row.outcomeCount}<span class="analysis-tile-count-x">×</span></span>`, row.outcomePoints, null, regIdx, 'outcome', cats.outcome.length > 0)}
+                ${analysisTile('approx', '📐', 'Yaklaşma', `<span class="analysis-tile-count">${row.approxAwardedCount}<span class="analysis-tile-count-sub">/${row.approxCount}</span></span>`, row.approxPoints, null, regIdx, 'approx', cats.approx.length > 0)}
+                ${analysisTile('blocked', '🚫', 'Bloke', `<span class="analysis-tile-count">${row.approxBlockedCount}<span class="analysis-tile-count-x">×</span></span>`, row.approxBlockedPoints, null, regIdx, 'blocked', cats.blocked.length > 0)}
+                ${analysisTile('bonus', '🔥', 'Bonus', '', row.bonusPoints, '+', regIdx, 'bonus', cats.bonus.length > 0)}
+              </div>
+            </div>`;
+          }).join('')}
         </div>
-        <div class="analysis-note">Yaklaşma sütununda ilk sayı puan alan yaklaşmaları, ikinci sayı toplam yaklaşma isabetini gösterir. Bloke: yaklaşma doğruyken aynı maçta birinin tam skor bilmesi nedeniyle yarım skor puanı verilmeyen tahmin sayısı.</div>
+        <div class="analysis-note">Yaklaşma kutucuğunda ilk sayı puan alan yaklaşmaları, ikinci sayı toplam yaklaşma isabetini gösterir. Bloke: yaklaşma doğruyken aynı maçta birinin tam skor bilmesi nedeniyle yarım skor puanı verilmeyen tahmin sayısı. Kutucuklara tıklayarak o kategorideki maçları görebilirsin.</div>
         ${loadingNote}
       `;
     }
