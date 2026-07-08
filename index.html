@@ -2376,10 +2376,11 @@
       overflow-x: auto;
       border: 1px solid var(--border-color);
       border-radius: var(--radius-md);
-      background: rgba(255,255,255,0.014);
+      background: linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0.006));
     }
-    .score-frequency-wrap::-webkit-scrollbar { height: 6px; }
-    .score-frequency-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
+    .score-frequency-wrap::-webkit-scrollbar { height: 7px; }
+    .score-frequency-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 999px; }
+    .score-frequency-wrap::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
     .score-frequency-table {
       width: 100%;
       min-width: 520px;
@@ -2390,22 +2391,23 @@
       position: sticky;
       top: 0;
       z-index: 1;
-      padding: 11px 12px;
+      padding: 12px 13px;
       font-size: 0.62rem;
       font-weight: 900;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.45px;
-      background: rgba(12,16,28,0.96);
+      background: rgba(10,14,26,0.98);
       border-bottom: 1px solid var(--border-color);
       white-space: nowrap;
     }
+    .score-frequency-table th.is-active { color: var(--accent); }
     .score-frequency-table th:first-child,
     .score-frequency-table td:first-child {
       position: sticky;
       left: 0;
       z-index: 2;
-      background: rgba(12,16,28,0.98);
+      background: rgba(10,14,26,0.99);
     }
     .score-frequency-table th:first-child { z-index: 3; }
     .score-frequency-sort {
@@ -2423,61 +2425,124 @@
       align-items: center;
       gap: 5px;
       max-width: 138px;
+      transition: var(--transition);
     }
     .score-frequency-sort span:first-child {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .score-frequency-sort:hover,
+    .score-frequency-sort:hover { color: var(--text-primary); }
     .score-frequency-sort.active { color: var(--accent); }
     .score-frequency-sort-arrow {
-      width: 10px;
+      width: 11px;
       flex-shrink: 0;
       color: currentColor;
-      opacity: 0.95;
+      font-weight: 900;
+      opacity: 0;
+      transition: var(--transition);
     }
+    .score-frequency-sort.active .score-frequency-sort-arrow,
+    .score-frequency-sort:hover .score-frequency-sort-arrow { opacity: 0.95; }
     .score-frequency-table td {
-      padding: 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.055);
+      padding: 11px 13px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
       font-size: 0.82rem;
       color: var(--text-secondary);
       white-space: nowrap;
       font-variant-numeric: tabular-nums;
+      transition: background var(--transition);
     }
+    .score-frequency-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.012); }
+    .score-frequency-table tbody tr:hover td { background: rgba(0,230,118,0.06); }
     .score-frequency-table tr:last-child td { border-bottom: none; }
+    .score-frequency-score-cell { display: inline-flex; align-items: center; gap: 8px; }
+    .score-frequency-rank {
+      display: inline-grid;
+      place-items: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 7px;
+      font-size: 0.62rem;
+      font-weight: 900;
+      font-family: var(--font-heading);
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-color);
+    }
+    .score-frequency-rank.top { color: #04130a; background: linear-gradient(145deg, #00e676, #00c853); border-color: transparent; box-shadow: 0 0 12px rgba(0,230,118,0.35); }
+    .score-frequency-rank.top2 { color: #04130a; background: linear-gradient(145deg, #b6f0c4, #79d393); border-color: transparent; }
+    .score-frequency-rank.top3 { color: var(--accent); background: rgba(0,230,118,0.16); border-color: rgba(0,230,118,0.3); }
     .score-frequency-score {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 48px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: rgba(0,230,118,0.1);
-      border: 1px solid rgba(0,230,118,0.24);
+      min-width: 52px;
+      padding: 5px 12px;
+      border-radius: 10px;
+      background: linear-gradient(145deg, rgba(0,230,118,0.14), rgba(0,230,118,0.05));
+      border: 1px solid rgba(0,230,118,0.28);
       color: var(--accent);
       font-family: var(--font-heading);
       font-weight: 900;
+      font-size: 0.86rem;
+      letter-spacing: 0.5px;
+    }
+    .score-frequency-total {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 30px;
+      padding: 4px 11px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
     }
     .score-frequency-count {
-      color: var(--text-primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: rgba(59,130,246,0.14);
+      border: 1px solid rgba(59,130,246,0.26);
+      color: #93c5fd;
       font-weight: 800;
+      font-variant-numeric: tabular-nums;
     }
-    .score-frequency-zero { color: rgba(255,255,255,0.24); }
+    .score-frequency-zero {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      padding: 3px 8px;
+      color: rgba(255,255,255,0.2);
+      font-weight: 700;
+    }
     .score-frequency-summary {
-      margin-top: 0.75rem;
+      margin-top: 0.85rem;
       display: flex;
-      gap: 7px;
+      gap: 8px;
       flex-wrap: wrap;
       font-size: 0.68rem;
       color: var(--text-muted);
     }
     .score-frequency-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       border: 1px solid var(--border-color);
-      background: rgba(255,255,255,0.025);
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01));
       border-radius: 999px;
-      padding: 4px 9px;
+      padding: 5px 11px;
+      font-weight: 700;
     }
+    .score-frequency-pill-ico { font-size: 0.74rem; line-height: 1; }
 
     @media (max-width: 520px) {
       .form-dot { width: 13px; height: 13px; font-size: 0.48rem; }
@@ -4133,10 +4198,10 @@
 
       <div class="leaderboard-analysis-card">
         <div class="leaderboard-analysis-head">
-          <div class="leaderboard-analysis-icon">#</div>
+          <div class="leaderboard-analysis-icon">🔢</div>
           <div>
-            <div class="leaderboard-analysis-title">En Cok Soylenen Skorlar</div>
-            <div class="leaderboard-analysis-subtitle">1-3 ve 3-1 ayni skor kabul edilir; satirlar toplam tahmin sayisina gore siralanir.</div>
+            <div class="leaderboard-analysis-title">En Çok Söylenen Skorlar</div>
+            <div class="leaderboard-analysis-subtitle">1-3 ve 3-1 aynı skor kabul edilir; satırlar toplam tahmin sayısına göre sıralanır.</div>
           </div>
         </div>
         <div id="score-frequency-analysis"></div>
@@ -4654,6 +4719,79 @@
     // durumundaki birikmiş toplamla (aggregate) birebir aynı olsun.
     let breakdownArchiveDocs = null;     // null = henüz yüklenmedi; [] = yüklendi (boş olabilir)
     let breakdownArchiveLoading = false;
+
+    // Arşiv önbelleği (localStorage): tam finalized listesi cihaz başına 1 kez okunur,
+    // sonrasında yalnızca finalizedAt > son senkron olan maçlar (delta) çekilir.
+    // archiveEpoch: sonuç temizleme / maç silme / yeniden hesaplama gibi "arşivden
+    // çıkarma" işlemlerinde artar → epoch uyuşmazsa önbellek atılır, tam okuma yapılır.
+    const ARCHIVE_CACHE_KEY = 'skorTahminArchiveCache_v1';
+    let archiveEpoch = 0;                    // settings/leaderboard.archiveEpoch (0 = hiç bump edilmedi)
+    let breakdownArchiveMaxFAms = 0;         // önbellekteki en büyük finalizedAt (ms)
+    let archiveDeltaSyncing = false;
+
+    function serializeArchiveDoc(m) {
+      return {
+        id: m.id,
+        tournament: m.tournament,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        homeScore: m.homeScore != null ? m.homeScore : null,
+        awayScore: m.awayScore != null ? m.awayScore : null,
+        outcomePoints: m.outcomePoints != null ? m.outcomePoints : null,
+        scorePoints: m.scorePoints != null ? m.scorePoints : null,
+        scoreboard: Array.isArray(m.scoreboard) ? m.scoreboard : [],
+        dt: m.datetime ? m.datetime.getTime() : null,
+        fa: matchFinalizedAtMs(m)
+      };
+    }
+
+    function hydrateArchiveDoc(s) {
+      return {
+        id: s.id,
+        tournament: s.tournament,
+        homeTeam: s.homeTeam,
+        awayTeam: s.awayTeam,
+        homeScore: s.homeScore,
+        awayScore: s.awayScore,
+        outcomePoints: s.outcomePoints,
+        scorePoints: s.scorePoints,
+        scoreboard: s.scoreboard || [],
+        finalized: true,
+        datetime: s.dt != null ? new Date(s.dt) : null,
+        finalizedAtMs: s.fa || 0
+      };
+    }
+
+    function matchFinalizedAtMs(m) {
+      if (m.finalizedAtMs) return m.finalizedAtMs;
+      const fa = m.finalizedAt;
+      if (fa && typeof fa.toMillis === 'function') return fa.toMillis();
+      return 0;
+    }
+
+    function loadArchiveCache() {
+      try {
+        const raw = localStorage.getItem(ARCHIVE_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.docs)) return null;
+        return parsed;
+      } catch (e) { return null; }
+    }
+
+    function saveArchiveCache() {
+      if (!Array.isArray(breakdownArchiveDocs)) return;
+      try {
+        localStorage.setItem(ARCHIVE_CACHE_KEY, JSON.stringify({
+          epoch: archiveEpoch,
+          maxFA: breakdownArchiveMaxFAms,
+          docs: breakdownArchiveDocs.map(serializeArchiveDoc)
+        }));
+      } catch (e) {
+        // Kota dolarsa önbelleksiz devam (yalnızca oturum içi bellek kullanılır).
+        try { localStorage.removeItem(ARCHIVE_CACHE_KEY); } catch (e2) {}
+      }
+    }
 
     // Admin future fixtures: independent from the 9-day live listener and loaded
     // only on demand so a full-season fixture does not increase normal page reads.
@@ -5514,6 +5652,7 @@
       try {
         const aggSnap = await db.collection('settings').doc('leaderboard').get();
         optimizedMode = aggSnap.exists;
+        archiveEpoch = aggSnap.exists ? (aggSnap.data().archiveEpoch || 0) : 0;
       } catch (e) {
         console.warn('Leaderboard aggregate read failed; using legacy mode.', e);
         optimizedMode = false;
@@ -5564,9 +5703,19 @@
           const data = doc.exists ? doc.data() : {};
           leaderboardTotals = data.totals || {};
           leaderboardTotalsByTournament = data.totalsByTournament || {};
-          // Aggregate değişti → bir sonuç finalize/değişmiş olabilir; detay önbelleğini
-          // tazele ki Puan Detayı modalı güncel finalized maçları çeksin.
-          breakdownArchiveDocs = null;
+          // Aggregate değişti → bir sonuç finalize edilmiş ya da düzenlenmiş olabilir.
+          // Epoch değiştiyse (sonuç temizleme / silme / recompute) önbellek geçersiz:
+          // tam okuma gerekir. Değişmediyse yalnızca yeni finalize olan maçlar (delta)
+          // çekilir — arşivin tamamı bir daha OKUNMAZ.
+          const newEpoch = data.archiveEpoch || 0;
+          if (newEpoch !== archiveEpoch) {
+            archiveEpoch = newEpoch;
+            breakdownArchiveDocs = null;
+            breakdownArchiveMaxFAms = 0;
+            try { localStorage.removeItem(ARCHIVE_CACHE_KEY); } catch (e) {}
+          } else if (Array.isArray(breakdownArchiveDocs)) {
+            syncArchiveDelta();
+          }
           renderLeaderboard();
         }, err => console.error(err));
 
@@ -7034,31 +7183,38 @@
       if (!container) return;
       const { userRows, scoreRows, totalPredictions } = collectScoreFrequencyStats();
       if (!scoreRows.length || !userRows.length) {
-        container.innerHTML = `<div class="leaderboard-empty">Skor analizi icin henuz tahmin yok.</div>`;
+        container.innerHTML = `<div class="leaderboard-empty">Skor analizi için henüz tahmin yok.</div>`;
         return;
       }
 
       const loadingNote = optimizedMode && breakdownArchiveDocs === null
-        ? `<div class="analysis-note">Arsiv detaylari yukleniyor; tamamlaninca bu tablo otomatik guncellenir.</div>`
+        ? `<div class="analysis-note">Arşiv detayları yükleniyor; tamamlanınca bu tablo otomatik güncellenir.</div>`
         : '';
+      const arrow = (uid) => scoreFrequencySortUid === uid ? '↓' : '';
       const userHeads = userRows.map(user =>
-        `<th title="${escapeHTML(user.displayName)}">
+        `<th class="${scoreFrequencySortUid === user.uid ? 'is-active' : ''}" title="${escapeHTML(user.displayName)}">
           <button type="button" class="score-frequency-sort ${scoreFrequencySortUid === user.uid ? 'active' : ''}" onclick="setScoreFrequencySort(${escapeHTML(JSON.stringify(user.uid))})">
-            <span>${escapeHTML(user.displayName)}</span><span class="score-frequency-sort-arrow">${scoreFrequencySortUid === user.uid ? 'v' : ''}</span>
+            <span>${escapeHTML(user.displayName)}</span><span class="score-frequency-sort-arrow">${arrow(user.uid)}</span>
           </button>
         </th>`
       ).join('');
-      const bodyRows = scoreRows.map(row => {
+      const bodyRows = scoreRows.map((row, idx) => {
+        const rankClass = idx === 0 ? 'top' : idx === 1 ? 'top2' : idx === 2 ? 'top3' : '';
         const cells = userRows.map(user => {
           const count = row.byUid[user.uid] || 0;
           return count
             ? `<td><span class="score-frequency-count">${count}</span></td>`
-            : `<td><span class="score-frequency-zero">-</span></td>`;
+            : `<td><span class="score-frequency-zero">·</span></td>`;
         }).join('');
         return `
           <tr>
-            <td><span class="score-frequency-score">${escapeHTML(row.score)}</span></td>
-            <td><span class="score-frequency-count">${row.total}</span></td>
+            <td>
+              <span class="score-frequency-score-cell">
+                <span class="score-frequency-rank ${rankClass}">${idx + 1}</span>
+                <span class="score-frequency-score">${escapeHTML(row.score)}</span>
+              </span>
+            </td>
+            <td><span class="score-frequency-total">${row.total}</span></td>
             ${cells}
           </tr>`;
       }).join('');
@@ -7069,9 +7225,9 @@
             <thead>
               <tr>
                 <th>Skor</th>
-                <th>
+                <th class="${scoreFrequencySortUid === null ? 'is-active' : ''}">
                   <button type="button" class="score-frequency-sort ${scoreFrequencySortUid === null ? 'active' : ''}" onclick="setScoreFrequencySort(null)">
-                    <span>Toplam</span><span class="score-frequency-sort-arrow">${scoreFrequencySortUid === null ? 'v' : ''}</span>
+                    <span>Toplam</span><span class="score-frequency-sort-arrow">${arrow(null)}</span>
                   </button>
                 </th>
                 ${userHeads}
@@ -7081,9 +7237,9 @@
           </table>
         </div>
         <div class="score-frequency-summary">
-          <span class="score-frequency-pill">${scoreRows.length} farkli skor</span>
-          <span class="score-frequency-pill">${totalPredictions} tahmin</span>
-          <span class="score-frequency-pill">${userRows.length} kullanici</span>
+          <span class="score-frequency-pill"><span class="score-frequency-pill-ico">🎯</span>${scoreRows.length} farklı skor</span>
+          <span class="score-frequency-pill"><span class="score-frequency-pill-ico">🗳️</span>${totalPredictions} tahmin</span>
+          <span class="score-frequency-pill"><span class="score-frequency-pill-ico">👥</span>${userRows.length} kullanıcı</span>
         </div>
         ${loadingNote}
       `;
@@ -7280,21 +7436,62 @@
     }
 
     // ================== USER POINT BREAKDOWN (Eye icon in Leaderboard) ==================
-    // Detay modalı için TÜM finalized maçları bir kez çek (sayfalı arşivden bağımsız).
-    // Tek seferlik tam okuma; sonuç önbelleğe alınır, sonraki açılışlarda tekrar okunmaz.
+    // Detay modalı / form / analiz için finalized maç arşivi. localStorage önbelleği
+    // sayesinde tam okuma cihaz başına yalnızca 1 kez yapılır; sonraki açılışlarda
+    // önbellekten yüklenir ve sadece yeni finalize olan maçlar (delta) okunur.
     async function ensureBreakdownArchive() {
       if (!optimizedMode) return;
       if (breakdownArchiveDocs !== null || breakdownArchiveLoading) return;
       breakdownArchiveLoading = true;
       try {
+        const cached = loadArchiveCache();
+        if (cached && (cached.epoch || 0) === archiveEpoch) {
+          breakdownArchiveDocs = cached.docs.map(hydrateArchiveDoc);
+          breakdownArchiveMaxFAms = cached.maxFA || 0;
+          breakdownArchiveLoading = false;
+          await syncArchiveDelta();      // önbellekten sonrası: sadece yeni maçlar
+          return;
+        }
+        // Önbellek yok ya da epoch uyuşmuyor → tam okuma (cihaz başına 1 kez).
         const snap = await db.collection('matches').where('finalized', '==', true).get();
         breakdownArchiveDocs = snap.docs.map(mapMatchDoc);
+        breakdownArchiveMaxFAms = breakdownArchiveDocs.reduce(
+          (mx, m) => Math.max(mx, matchFinalizedAtMs(m)), 0);
+        saveArchiveCache();
       } catch (e) {
         console.error(e);
         breakdownArchiveDocs = null;   // tekrar denenebilsin
         throw e;
       } finally {
         breakdownArchiveLoading = false;
+      }
+    }
+
+    // Yalnızca finalizedAt > son senkron olan maçları çeker ve önbelleğe işler.
+    // Sonuç girildikçe aggregate listener'ı bunu tetikler: maç başına ~1 okuma.
+    async function syncArchiveDelta() {
+      if (!optimizedMode || !Array.isArray(breakdownArchiveDocs)) return;
+      if (archiveDeltaSyncing) return;
+      archiveDeltaSyncing = true;
+      try {
+        const snap = await db.collection('matches')
+          .where('finalized', '==', true)
+          .where('finalizedAt', '>', firebase.firestore.Timestamp.fromMillis(breakdownArchiveMaxFAms || 0))
+          .get();
+        if (!snap.empty) {
+          const byId = Object.fromEntries(breakdownArchiveDocs.map(m => [m.id, m]));
+          snap.docs.forEach(d => { byId[d.id] = mapMatchDoc(d); });
+          breakdownArchiveDocs = Object.values(byId);
+          breakdownArchiveMaxFAms = breakdownArchiveDocs.reduce(
+            (mx, m) => Math.max(mx, matchFinalizedAtMs(m)), breakdownArchiveMaxFAms || 0);
+          saveArchiveCache();
+          if (currentView === 'leaderboard') renderLeaderboard();
+          if (breakdownUid) renderBreakdownBody();
+        }
+      } catch (e) {
+        console.warn('Arşiv delta senkronu başarısız:', e);
+      } finally {
+        archiveDeltaSyncing = false;
       }
     }
 
@@ -8047,11 +8244,19 @@
               bucket[uid] = (bucket[uid] || 0) + pts;
             });
             finalizedForArchiveIndex.push({ ...m, tournament, finalized: true });
-            const upd = { finalized: true, scoreboard };
+            const upd = {
+              finalized: true,
+              scoreboard,
+              finalizedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
             if (needsTagWrite) upd.tournament = tournament;
             batch.update(ref, upd);
           } else {
-            const upd = { finalized: false, scoreboard: firebase.firestore.FieldValue.delete() };
+            const upd = {
+              finalized: false,
+              scoreboard: firebase.firestore.FieldValue.delete(),
+              finalizedAt: firebase.firestore.FieldValue.delete()
+            };
             if (needsTagWrite) upd.tournament = tournament;
             batch.update(ref, upd);
           }
@@ -8060,6 +8265,9 @@
         batch.set(db.collection('settings').doc('leaderboard'), {
           totals,
           totalsByTournament,
+          // Tam yeniden hesaplama tüm istemci arşiv önbelleklerini geçersiz kılmalı;
+          // Date.now() her koşuda farklı olduğundan epoch uyuşmazlığı garanti.
+          archiveEpoch: Date.now(),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         batch.set(archiveDaysRef(), {
@@ -8236,7 +8444,11 @@
       const payload = aggIncrPayload(tournamentOf(prev), delta);
 
       const batch = db.batch();
-      batch.update(db.collection('matches').doc(matchId), { finalized: true, scoreboard });
+      batch.update(db.collection('matches').doc(matchId), {
+        finalized: true,
+        scoreboard,
+        finalizedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
       if (payload) batch.set(aggRef(), payload, { merge: true });
       await batch.commit();
     }
@@ -8296,12 +8508,18 @@
           // Clearing a result → un-finalise and remove its points from the aggregate.
           data.finalized = false;
           data.scoreboard = firebase.firestore.FieldValue.delete();
+          data.finalizedAt = firebase.firestore.FieldValue.delete();
           const delta = {};
           prevSb.forEach(s => { if (s.pts) delta[s.uid] = (delta[s.uid] || 0) - (s.pts || 0); });
           const payload = aggIncrPayload(tournamentOf(prev), delta);
           const batch = db.batch();
           batch.update(matchRef, data);
-          if (payload) batch.set(aggRef(), payload, { merge: true });
+          // Arşivden maç ÇIKTI → istemci önbellekleri delta ile yakalayamaz;
+          // epoch artışı tam yeniden okumaya zorlar (nadir işlem).
+          batch.set(aggRef(), {
+            ...(payload || {}),
+            archiveEpoch: firebase.firestore.FieldValue.increment(1)
+          }, { merge: true });
           await batch.commit();
           await removeArchiveDayIndex({ id: matchId, ...prev });
           resetArchivePaging();
@@ -8323,6 +8541,9 @@
 
         data.finalized = true;
         data.scoreboard = scoreboard;
+        // Delta senkron imzası: istemciler yalnızca finalizedAt > son senkron
+        // olan maçları çeker. Düzenlemede de yenilenir ki değişiklik yakalansın.
+        data.finalizedAt = firebase.firestore.FieldValue.serverTimestamp();
 
         const batch = db.batch();
         batch.update(matchRef, data);
@@ -8352,11 +8573,16 @@
         preds.forEach(doc => batch.delete(doc.ref));
         batch.delete(matchRef);
         // Roll this match's points out of the aggregate leaderboard.
-        if (optimizedMode && prevSb.length) {
+        if (optimizedMode && prev.finalized) {
           const delta = {};
           prevSb.forEach(s => { if (s.pts) delta[s.uid] = (delta[s.uid] || 0) - (s.pts || 0); });
           const payload = aggIncrPayload(tournamentOf(prev), delta);
-          if (payload) batch.set(aggRef(), payload, { merge: true });
+          // Finalized bir maç silindi → istemci arşiv önbellekleri epoch artışıyla
+          // geçersiz kılınır (delta sorgusu silinen maçı yakalayamaz).
+          batch.set(aggRef(), {
+            ...(payload || {}),
+            archiveEpoch: firebase.firestore.FieldValue.increment(1)
+          }, { merge: true });
         }
         await batch.commit();
         if (optimizedMode && prev.finalized) await removeArchiveDayIndex({ id: matchId, ...prev });
@@ -9016,11 +9242,10 @@
 
       if (view === 'predictions') renderPredictionsView();
       if (view === 'leaderboard') {
+        // Form/analiz/detay verisi breakdownArchiveDocs önbelleğinden gelir
+        // (renderLeaderboard → ensureLeaderboardFormData); ayrıca sayfalı arşivi
+        // ön-yüklemeye gerek yok.
         renderLeaderboard();
-        if (optimizedMode && archiveHasMore && archiveDocs.length === 0) {
-          // Load some archive in background so eye-icon breakdown shows more historical data
-          loadMoreArchive();
-        }
       }
       if (view === 'archive') {
         // İlk açılışta veya hâlâ eski sabit değerdeyse admin'in varsayılan turnuvasını kullan

@@ -7,6 +7,14 @@
         { "fieldPath": "finalized", "order": "ASCENDING" },
         { "fieldPath": "datetime", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "matches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "finalized", "order": "ASCENDING" },
+        { "fieldPath": "finalizedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
