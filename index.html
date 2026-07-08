@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-store, max-age=0, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="app-version" content="2026-06-18-0907">
+  <meta name="app-version" content="2026-07-08-form-streak">
   <title>AEFY LİG ⚽ | Skor Tahmin</title>
   
   <!-- Firebase Compat SDKs -->
@@ -1630,6 +1630,254 @@
     .rank-other { color: var(--text-secondary); font-weight: 700; }
 
     .user-display-name { font-weight: 700; color: var(--text-primary); }
+    .lb-user-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .lb-user-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .lb-user-top .user-display-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Form dots + streak on leaderboard */
+    .lb-form {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: nowrap;
+    }
+    .form-dot {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.52rem;
+      font-weight: 900;
+      line-height: 1;
+      flex-shrink: 0;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    .form-dot.exact {
+      background: linear-gradient(145deg, #39F58B, #00B35E);
+      color: #02140A;
+      box-shadow: 0 0 0 1px rgba(0,230,118,0.35), 0 2px 8px rgba(0,230,118,0.35);
+    }
+    .form-dot.approx {
+      background: linear-gradient(145deg, #7EC8FF, #3B82F6);
+      color: #04101F;
+    }
+    .form-dot.outcome {
+      background: linear-gradient(145deg, #F7E57F, #C8A63A);
+      color: #1A1400;
+    }
+    .form-dot.miss {
+      background: rgba(255,77,94,0.22);
+      border: 1.5px solid rgba(255,77,94,0.55);
+      color: #FF8A96;
+    }
+    .form-dot.empty {
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.12);
+      color: transparent;
+    }
+    .streak-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.68rem;
+      padding: 2px 7px 2px 5px;
+      border-radius: 999px;
+      background: rgba(255, 122, 26, 0.12);
+      border: 1px solid rgba(255, 122, 26, 0.35);
+      color: #FFB074;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .streak-badge.cold {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.1);
+      color: var(--text-muted);
+    }
+    .streak-badge .streak-fire { font-size: 0.72rem; line-height: 1; }
+    .lb-form-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      padding: 12px 16px 4px;
+      border-top: 1px solid var(--border-color);
+      margin-top: 4px;
+    }
+    .lb-form-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    .lb-rules-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-heading);
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--accent);
+      background: rgba(0,230,118,0.08);
+      border: 1px solid rgba(0,230,118,0.28);
+      border-radius: var(--radius-full);
+      padding: 7px 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      white-space: nowrap;
+    }
+    .lb-rules-link:hover {
+      background: rgba(0,230,118,0.14);
+      border-color: rgba(0,230,118,0.45);
+      transform: translateY(-1px);
+    }
+
+    /* Rules / scoring guide page */
+    .rules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 1rem;
+    }
+    .rules-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.1rem 1.15rem 1.15rem;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+    }
+    .rules-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      opacity: 0.85;
+    }
+    .rules-card.gold::before { background: var(--accent-gold); }
+    .rules-card.blue::before { background: var(--accent-blue); }
+    .rules-card.orange::before { background: #FF7A1A; }
+    .rules-card.red::before { background: var(--accent-red); }
+    .rules-card-icon {
+      font-size: 1.35rem;
+      margin-bottom: 0.45rem;
+      line-height: 1;
+    }
+    .rules-card h3 {
+      font-family: var(--font-heading);
+      font-size: 0.98rem;
+      font-weight: 800;
+      margin: 0 0 0.4rem;
+      color: var(--text-primary);
+    }
+    .rules-card p {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+    .rules-card .pts-pill {
+      display: inline-flex;
+      margin-top: 0.7rem;
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.72rem;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(0,230,118,0.1);
+      border: 1px solid rgba(0,230,118,0.25);
+      color: var(--accent);
+    }
+    .rules-card.gold .pts-pill {
+      background: rgba(232,197,71,0.1);
+      border-color: rgba(232,197,71,0.28);
+      color: var(--accent-gold);
+    }
+    .rules-card.blue .pts-pill {
+      background: rgba(59,130,246,0.1);
+      border-color: rgba(59,130,246,0.28);
+      color: #8AB4FF;
+    }
+    .rules-card.orange .pts-pill {
+      background: rgba(255,122,26,0.1);
+      border-color: rgba(255,122,26,0.28);
+      color: #FFB074;
+    }
+    .rules-card.red .pts-pill {
+      background: rgba(255,77,94,0.1);
+      border-color: rgba(255,77,94,0.28);
+      color: #FF8A96;
+    }
+    .rules-note {
+      background: rgba(255,255,255,0.02);
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.95rem 1.05rem;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+    .rules-note strong { color: var(--text-primary); }
+    .rules-examples {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rules-example {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 12px;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+    }
+    .rules-example .ex-title {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.82rem;
+      color: var(--text-primary);
+    }
+    .rules-example .ex-desc {
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      grid-column: 1 / -1;
+      line-height: 1.45;
+    }
+    .rules-example .ex-pts {
+      font-family: var(--font-heading);
+      font-weight: 900;
+      font-size: 0.85rem;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .rules-back-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 0.5rem;
+    }
+
     .points-val {
       font-family: var(--font-heading);
       font-size: 1.12rem;
@@ -1651,6 +1899,13 @@
     .lb-points-cell .breakdown-eye { flex-shrink: 0; margin-left: 1px; }
 
     .leaderboard-empty { padding: 2.5rem 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
+    @media (max-width: 520px) {
+      .form-dot { width: 13px; height: 13px; font-size: 0.48rem; }
+      .lb-form { gap: 3px; }
+      .leaderboard-table td { padding: 11px 12px; }
+      .leaderboard-table th { padding: 12px; }
+    }
 
     /* Admin Cards */
     .admin-card {
@@ -3247,9 +3502,10 @@
       <div class="section-header">
         <div>
           <h2 class="section-title">Puan Durumu</h2>
-          <p class="section-subtitle">Tam skor: Sonuç puanı + Skor puanı • Yaklaşma (tek farkla kaçırma; beraberlikte 0-0↔1-1 gibi her iki tarafta 1 fark): Sonuç puanı + Skor puanının yarısı • Sadece doğru sonuç: Sonuç puanı. Bir sonucu tek bilene ayrıca +3.</p>
+          <p class="section-subtitle">Son 5 maç formu ve isabet serisi. Detay için 👁️, kurallar için aşağıdaki butona bak.</p>
         </div>
-        <div class="section-header-controls">
+        <div class="section-header-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+          <button type="button" class="lb-rules-link" onclick="switchView('rules')" title="Puan kurallarını oku">📘 Nasıl puan kazanılır?</button>
           <select id="leaderboard-tournament-filter" class="input-field tournament-filter" onchange="onLeaderboardFilterChange(this.value)"></select>
         </div>
       </div>
@@ -3258,7 +3514,7 @@
           <thead>
             <tr>
               <th style="width: 60px;">#</th>
-              <th>Kullanıcı</th>
+              <th>Kullanıcı · Form · Seri</th>
               <th style="text-align: right; min-width: 110px;">Puan</th>
             </tr>
           </thead>
@@ -3266,6 +3522,111 @@
             <!-- Populated by JS -->
           </tbody>
         </table>
+        <div class="lb-form-legend" aria-label="Form açıklaması">
+          <span class="lb-form-legend-item"><span class="form-dot exact">S</span> Tam skor</span>
+          <span class="lb-form-legend-item"><span class="form-dot approx">Y</span> Yaklaşma</span>
+          <span class="lb-form-legend-item"><span class="form-dot outcome">1</span> Sadece sonuç</span>
+          <span class="lb-form-legend-item"><span class="form-dot miss">×</span> Iskalama</span>
+          <span class="lb-form-legend-item"><span class="streak-badge"><span class="streak-fire">🔥</span>N</span> Sonuç isabet serisi</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULES / HOW POINTS WORK -->
+    <div id="view-rules" class="hidden">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Nasıl puan kazanılır?</h2>
+          <p class="section-subtitle">Her maçta tek tahmin hakkın var. Kilitledikten sonra değiştiremezsin; maç saatinden 15 dk önce kapı kapanır.</p>
+        </div>
+        <div class="section-header-controls">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="switchView('leaderboard')">← Puan Durumu</button>
+        </div>
+      </div>
+
+      <div class="rules-note">
+        <strong>Puan iki parçadan oluşur:</strong> her maç için admin/iddaa oranlarından türetilen
+        <strong>Sonuç puanı</strong> (1 / X / 2 doğruysa) ve <strong>Skor puanı</strong> (tam skora göre).
+        Yüksek oranlı sürprizler daha çok puan getirir.
+      </div>
+
+      <div class="rules-grid">
+        <div class="rules-card">
+          <div class="rules-card-icon">🎯</div>
+          <h3>Tam skor</h3>
+          <p>Hem kazananı/beraberliği hem de kesin skoru bildin. En yüksek ödül.</p>
+          <span class="pts-pill">Sonuç + Skor (tam)</span>
+        </div>
+        <div class="rules-card blue">
+          <div class="rules-card-icon">📐</div>
+          <h3>Yaklaşma</h3>
+          <p>Sonuç doğru; skorda tek gol farkı. Örn. 2-1 varken 2-0 veya 1-1. Beraberlikte her iki tarafta 1 fark da sayılır (0-0 ↔ 1-1).</p>
+          <span class="pts-pill">Sonuç + Skor / 2</span>
+        </div>
+        <div class="rules-card gold">
+          <div class="rules-card-icon">✅</div>
+          <h3>Sadece sonuç</h3>
+          <p>Kim kazanır / berabere kalır doğru; skor uzak. Yine de sonuç puanını alırsın.</p>
+          <span class="pts-pill">Sadece Sonuç puanı</span>
+        </div>
+        <div class="rules-card red">
+          <div class="rules-card-icon">❌</div>
+          <h3>Yanlış sonuç</h3>
+          <p>Kazanan/berabere yanlışsa skora bakılmaz — maçtan <strong>0 puan</strong>.</p>
+          <span class="pts-pill">0 puan</span>
+        </div>
+        <div class="rules-card orange">
+          <div class="rules-card-icon">🔥</div>
+          <h3>Yalnız doğru bilen</h3>
+          <p>Grupta o maçın sonucunu (1/X/2) yalnızca sen bildiysen ekstra bonus.</p>
+          <span class="pts-pill">+3 bonus</span>
+        </div>
+        <div class="rules-card">
+          <div class="rules-card-icon">⚠️</div>
+          <h3>Yaklaşma istisnası</h3>
+          <p>Birisi tam skoru bildiyse, yaklaşma yapanlar yarım skor puanı almaz — yalnızca sonuç puanı kalır.</p>
+          <span class="pts-pill">Tam skor varsa yarım yok</span>
+        </div>
+      </div>
+
+      <h3 class="admin-card-title" style="margin: 0.4rem 0 0.75rem;">Örnek senaryolar</h3>
+      <div class="rules-examples" style="margin-bottom: 1.1rem;">
+        <div class="rules-example">
+          <div class="ex-title">Maç 2-1 bitti · sen 2-1 dedin</div>
+          <div class="ex-pts">Sonuç + Skor</div>
+          <div class="ex-desc">Tam isabet. Formda yeşil <strong>S</strong> noktası.</div>
+        </div>
+        <div class="rules-example">
+          <div class="ex-title">Maç 2-1 · sen 2-0 · kimse tam skoru bilmedi</div>
+          <div class="ex-pts">Sonuç + ½ Skor</div>
+          <div class="ex-desc">Yaklaşma. Formda mavi <strong>Y</strong>.</div>
+        </div>
+        <div class="rules-example">
+          <div class="ex-title">Maç 1-1 · sen 0-0 · kimse 1-1 demedi</div>
+          <div class="ex-pts">Sonuç + ½ Skor</div>
+          <div class="ex-desc">Beraberlikte her iki tarafta 1 fark yaklaşma sayılır.</div>
+        </div>
+        <div class="rules-example">
+          <div class="ex-title">Maç 3-0 · sen 1-0 · gruptan sadece sen ev sahibi dedin</div>
+          <div class="ex-pts">Sonuç + 3</div>
+          <div class="ex-desc">Sonuç doğru + yalnız sen bildiğin için +3. Formda sarı <strong>1</strong>.</div>
+        </div>
+        <div class="rules-example">
+          <div class="ex-title">Maç 0-2 · sen 1-0 dedin</div>
+          <div class="ex-pts">0</div>
+          <div class="ex-desc">Yanlış taraf — skor yakın olsa bile puan yok. Formda kırmızı ×; seri kopar.</div>
+        </div>
+      </div>
+
+      <div class="rules-note">
+        <strong>Form (son 5):</strong> Soldan sağa eskiden yeniye. Sadece sonucu girilmiş ve senin tahmininin olduğu maçlar sayılır.<br>
+        <strong>Seri 🔥:</strong> En son maçtan geriye, üst üste sonuç bildiğin (puan &gt; 0) maç sayısı. Iskalayınca sıfırlanır.<br>
+        <strong>Turnuva filtresi:</strong> Puan durumu, form ve seri seçili turnuvaya göre hesaplanır.
+      </div>
+
+      <div class="rules-back-row">
+        <button type="button" class="btn btn-primary" onclick="switchView('leaderboard')">Puan Durumuna dön</button>
+        <button type="button" class="btn btn-secondary" onclick="switchView('matches')">Maçlara git</button>
       </div>
     </div>
 
@@ -5416,9 +5777,143 @@
     }
 
     // ================== LEADERBOARD ==================
+    const FORM_LENGTH = 5;
+    let formArchiveEnsureStarted = false;
+
+    // Classify a scored prediction for form dots: exact / approx / outcome / miss
+    function classifyPickResult(homePred, awayPred, homeScore, awayScore) {
+      if (homeScore == null || awayScore == null || homePred == null || awayPred == null) return null;
+      const predOutcome = Math.sign(homePred - awayPred);
+      const actOutcome = Math.sign(homeScore - awayScore);
+      if (predOutcome !== actOutcome) return 'miss';
+      const diff = Math.abs(homePred - homeScore) + Math.abs(awayPred - awayScore);
+      if (diff === 0) return 'exact';
+      const approxDiff = (actOutcome === 0) ? 2 : 1;
+      if (diff === approxDiff) return 'approx';
+      return 'outcome';
+    }
+
+    // Chronological history (newest first) of finished picks for a user, tournament-filtered.
+    // Includes 0-point misses so form/streak are accurate.
+    function getUserResultHistory(uid) {
+      const items = [];
+      const seen = new Set();
+      const tFilter = leaderboardTournamentFilter;
+      const passesTournament = (match) =>
+        tFilter === ALL_TOURNAMENTS || tournamentOf(match) === tFilter;
+
+      const matchById = Object.fromEntries(matches.map(m => [m.id, m]));
+      allPredictions.filter(p => p.uid === uid).forEach(pred => {
+        const match = matchById[pred.matchId];
+        if (!match || seen.has(pred.matchId) || !passesTournament(match)) return;
+        if (match.homeScore == null || match.awayScore == null) return;
+        seen.add(pred.matchId);
+        const kind = classifyPickResult(pred.homePred, pred.awayPred, match.homeScore, match.awayScore);
+        const pts = autoPointsFor(pred, match);
+        if (!kind) return;
+        items.push({
+          matchId: pred.matchId,
+          datetime: match.datetime,
+          kind,
+          pts: pts != null ? Number(pts) : 0
+        });
+      });
+
+      const archiveSource = (optimizedMode && Array.isArray(breakdownArchiveDocs))
+        ? breakdownArchiveDocs
+        : (optimizedMode ? archiveDocs : null);
+      if (Array.isArray(archiveSource)) {
+        archiveSource.forEach(match => {
+          if (seen.has(match.id) || !passesTournament(match)) return;
+          if (match.homeScore == null || match.awayScore == null) return;
+          const sb = Array.isArray(match.scoreboard) ? match.scoreboard : [];
+          const entry = sb.find(s => s.uid === uid);
+          if (!entry) return;
+          seen.add(match.id);
+          const kind = classifyPickResult(entry.h, entry.a, match.homeScore, match.awayScore);
+          if (!kind) return;
+          items.push({
+            matchId: match.id,
+            datetime: match.datetime,
+            kind,
+            pts: entry.pts != null ? Number(entry.pts) : 0
+          });
+        });
+      }
+
+      items.sort((a, b) => {
+        const ta = a.datetime ? a.datetime.getTime() : 0;
+        const tb = b.datetime ? b.datetime.getTime() : 0;
+        return tb - ta;
+      });
+      return items;
+    }
+
+    // Consecutive results with points > 0, counting from the most recent match back.
+    function computeStreak(historyNewestFirst) {
+      let n = 0;
+      for (const it of historyNewestFirst) {
+        if (it.pts > 0) n++;
+        else break;
+      }
+      return n;
+    }
+
+    function formDotsHTML(historyNewestFirst) {
+      // Display oldest → newest (left to right), last FORM_LENGTH picks
+      const slice = historyNewestFirst.slice(0, FORM_LENGTH).reverse();
+      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+      const titles = {
+        exact: 'Tam skor',
+        approx: 'Yaklaşma',
+        outcome: 'Sadece sonuç',
+        miss: 'Iskalama'
+      };
+      let html = '';
+      for (let i = 0; i < FORM_LENGTH; i++) {
+        const it = slice[i];
+        if (!it) {
+          html += `<span class="form-dot empty" title="Henüz maç yok">·</span>`;
+        } else {
+          html += `<span class="form-dot ${it.kind}" title="${titles[it.kind] || it.kind}">${labels[it.kind] || '?'}</span>`;
+        }
+      }
+      return html;
+    }
+
+    function streakBadgeHTML(streak) {
+      if (streak > 0) {
+        return `<span class="streak-badge" title="Son ${streak} maçta üst üste sonuç bildi"><span class="streak-fire">🔥</span>${streak}</span>`;
+      }
+      return `<span class="streak-badge cold" title="Aktif sonuç serisi yok">—</span>`;
+    }
+
+    async function ensureLeaderboardFormData() {
+      if (!optimizedMode) return;
+      if (breakdownArchiveDocs !== null || formArchiveEnsureStarted) return;
+      formArchiveEnsureStarted = true;
+      try {
+        // Başka bir yer (göz ikonu) zaten yüklüyorsa bitmesini bekle
+        while (breakdownArchiveLoading) {
+          await new Promise(r => setTimeout(r, 120));
+        }
+        if (breakdownArchiveDocs === null) {
+          await ensureBreakdownArchive();
+        }
+      } catch (e) {
+        console.warn('Form/seri için arşiv yüklenemedi:', e);
+      } finally {
+        formArchiveEnsureStarted = false;
+        if (currentView === 'leaderboard') renderLeaderboard();
+      }
+    }
+
     function renderLeaderboard() {
       const tbody = document.getElementById('leaderboard-body');
+      if (!tbody) return;
       tbody.innerHTML = '';
+
+      ensureLeaderboardFormData();
 
       const tFilter = leaderboardTournamentFilter;
       let pointsMap = {};
@@ -5442,10 +5937,13 @@
 
       let rows = Object.keys(pointsMap).map(uid => {
         const profile = usersMap[uid] || {};
+        const history = getUserResultHistory(uid);
         return {
           uid,
           displayName: profile.displayName || profile.email || 'Bilinmeyen',
-          points: pointsMap[uid]
+          points: pointsMap[uid],
+          history,
+          streak: computeStreak(history)
         };
       }).sort((a, b) => b.points - a.points);
 
@@ -5467,7 +5965,13 @@
         tr.innerHTML = `
           <td><span class="rank-badge ${rankClass}">${rankContent}</span></td>
           <td>
-            <div class="user-display-name">${escapeHTML(row.displayName)}</div>
+            <div class="lb-user-cell">
+              <div class="lb-user-top">
+                <div class="user-display-name">${escapeHTML(row.displayName)}</div>
+                ${streakBadgeHTML(row.streak)}
+              </div>
+              <div class="lb-form" aria-label="Son ${FORM_LENGTH} maç formu">${formDotsHTML(row.history)}</div>
+            </div>
           </td>
           <td class="lb-points-td">
             <div class="lb-points-cell">
@@ -7189,7 +7693,8 @@
         leaderboard: document.getElementById('view-leaderboard'),
         archive: document.getElementById('view-archive'),
         museum: document.getElementById('view-museum'),
-        admin: document.getElementById('view-admin')
+        admin: document.getElementById('view-admin'),
+        rules: document.getElementById('view-rules')
       };
 
       const btns = {
@@ -7209,7 +7714,9 @@
       });
 
       if (views[view]) views[view].classList.remove('hidden');
-      if (btns[view]) btns[view].classList.add('active');
+      // Rules is reached from leaderboard — keep puan durumu tab highlighted
+      if (view === 'rules' && btns.leaderboard) btns.leaderboard.classList.add('active');
+      else if (btns[view]) btns[view].classList.add('active');
 
       currentView = view;
 
