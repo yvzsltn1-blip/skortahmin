@@ -1711,6 +1711,125 @@
       color: var(--text-muted);
     }
     .streak-badge .streak-fire { font-size: 0.72rem; line-height: 1; }
+
+    /* 🎯 Skor isabet serisi (üst üste tam skor bilme) — premium emerald badge */
+    .exact-streak-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.68rem;
+      padding: 2px 7px 2px 5px;
+      border-radius: 999px;
+      background: linear-gradient(145deg, rgba(57,245,139,0.18), rgba(0,179,94,0.08));
+      border: 1px solid rgba(57,245,139,0.42);
+      color: #5CFCA0;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-shadow: 0 0 10px rgba(57,245,139,0.15);
+    }
+    .exact-streak-badge.hot {
+      background: linear-gradient(145deg, rgba(57,245,139,0.28), rgba(0,179,94,0.14));
+      border-color: rgba(57,245,139,0.6);
+      box-shadow: 0 0 16px rgba(57,245,139,0.35);
+      animation: exact-streak-pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes exact-streak-pulse {
+      0%, 100% { box-shadow: 0 0 14px rgba(57,245,139,0.3); }
+      50% { box-shadow: 0 0 26px rgba(57,245,139,0.58); }
+    }
+    .exact-streak-badge .exact-streak-icon { font-size: 0.72rem; line-height: 1; }
+    .exact-streak-badge.cold {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.1);
+      color: var(--text-muted);
+      box-shadow: none;
+    }
+
+    /* Form noktaları artık tıklanabilir buton */
+    button.form-dot {
+      cursor: pointer;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      -webkit-appearance: none;
+      appearance: none;
+      transition: transform .15s cubic-bezier(0.23,1,0.32,1), filter .15s;
+    }
+    button.form-dot:hover { transform: scale(1.22); filter: brightness(1.18); }
+    button.form-dot:active { transform: scale(1.08); }
+
+    /* Form noktası popover — maç detayı */
+    .formdot-pop { position: fixed; inset: 0; z-index: 1400; }
+    .formdot-pop.hidden { display: none; }
+    .formdot-pop-card {
+      position: absolute;
+      background: var(--bg-card);
+      border: 1px solid var(--border-hover);
+      border-radius: 14px;
+      padding: 14px 16px 13px;
+      box-shadow: var(--shadow-lg);
+      max-width: 300px;
+      min-width: 235px;
+      animation: formdot-pop-in .18s cubic-bezier(0.23,1,0.32,1);
+    }
+    @keyframes formdot-pop-in {
+      from { opacity: 0; transform: scale(0.9) translateY(4px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .formdot-pop-card::after {
+      content: ""; position: absolute; top: -7px;
+      left: var(--arrow-left, 22px);
+      width: 12px; height: 12px;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border-hover);
+      border-top: 1px solid var(--border-hover);
+      transform: rotate(45deg);
+    }
+    .formdot-pop-card.flip-down::after {
+      top: auto; bottom: -7px;
+      border-top: none; border-bottom: 1px solid var(--border-hover);
+      transform: rotate(225deg);
+    }
+    .formdot-pop-close {
+      position: absolute; top: 6px; right: 8px;
+      width: 22px; height: 22px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.9rem; line-height: 1; cursor: pointer; padding: 0;
+      transition: var(--transition);
+    }
+    .formdot-pop-close:hover { color: #fff; border-color: var(--accent-red); }
+    .formdot-pop-kind {
+      display: flex; align-items: center; gap: 7px;
+      font-family: var(--font-heading); font-weight: 800; font-size: 0.82rem;
+      color: var(--text-primary); margin-bottom: 8px; padding-right: 20px;
+    }
+    .formdot-pop-teams {
+      font-family: var(--font-heading); font-weight: 700; font-size: 0.92rem;
+      color: var(--text-primary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 3px;
+    }
+    .formdot-pop-date {
+      font-family: var(--font-heading); font-size: 0.67rem; font-weight: 700;
+      color: var(--text-muted); margin-bottom: 8px;
+    }
+    .formdot-pop-detail { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.65; }
+    .formdot-pop-detail strong { color: var(--accent); font-weight: 800; }
+    .formdot-pop-result { color: var(--accent-gold); font-weight: 800; }
+    .formdot-pop-pts {
+      display: inline-block; font-family: var(--font-heading); font-weight: 800;
+      font-size: 0.72rem; padding: 1px 8px; border-radius: 999px; margin-top: 4px;
+    }
+    .formdot-pop-pts.positive { background: rgba(0,230,118,0.14); color: var(--accent); border: 1px solid rgba(0,230,118,0.3); }
+    .formdot-pop-pts.zero { background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid var(--border-color); }
+    .formdot-taphint { font-weight: 700; color: var(--accent-gold); }
     .lb-form-legend {
       display: flex;
       flex-wrap: wrap;
@@ -3720,6 +3839,8 @@
           <span class="lb-form-legend-item"><span class="form-dot outcome">1</span> Sadece sonuç</span>
           <span class="lb-form-legend-item"><span class="form-dot miss">×</span> Iskalama</span>
           <span class="lb-form-legend-item"><span class="streak-badge"><span class="streak-fire">🔥</span>N</span> Sonuç isabet serisi</span>
+          <span class="lb-form-legend-item"><span class="exact-streak-badge"><span class="exact-streak-icon">🎯</span>N</span> Skor isabet serisi</span>
+          <span class="lb-form-legend-item"><span class="formdot-taphint">👆</span> Noktalara tıkla → maç detayı</span>
         </div>
       </div>
     </div>
@@ -4078,6 +4199,17 @@
         <div id="breakdown-total"></div>
         <button onclick="closeBreakdownModal()" class="btn btn-secondary btn-sm">Kapat</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Form Dot Popover (Maç detayı — noktaya tıklayınca açılır) -->
+  <div id="formdot-pop" class="formdot-pop hidden" onclick="if(event.target.id==='formdot-pop') closeFormDotPop()">
+    <div class="formdot-pop-card" onclick="event.stopImmediatePropagation()">
+      <button class="formdot-pop-close" onclick="closeFormDotPop()" aria-label="Kapat">×</button>
+      <div id="formdot-pop-kind" class="formdot-pop-kind"></div>
+      <div id="formdot-pop-teams" class="formdot-pop-teams"></div>
+      <div id="formdot-pop-date" class="formdot-pop-date"></div>
+      <div id="formdot-pop-detail" class="formdot-pop-detail"></div>
     </div>
   </div>
 
@@ -6007,7 +6139,13 @@
           matchId: pred.matchId,
           datetime: match.datetime,
           kind,
-          pts: pts != null ? Number(pts) : 0
+          pts: pts != null ? Number(pts) : 0,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          homePred: pred.homePred,
+          awayPred: pred.awayPred,
+          homeScore: match.homeScore,
+          awayScore: match.awayScore
         });
       });
 
@@ -6028,7 +6166,13 @@
             matchId: match.id,
             datetime: match.datetime,
             kind,
-            pts: entry.pts != null ? Number(entry.pts) : 0
+            pts: entry.pts != null ? Number(entry.pts) : 0,
+            homeTeam: match.homeTeam,
+            awayTeam: match.awayTeam,
+            homePred: entry.h,
+            awayPred: entry.a,
+            homeScore: match.homeScore,
+            awayScore: match.awayScore
           });
         });
       }
@@ -6051,6 +6195,19 @@
       return n;
     }
 
+    // Consecutive exact-score hits, counting from the most recent match back.
+    function computeExactStreak(historyNewestFirst) {
+      let n = 0;
+      for (const it of historyNewestFirst) {
+        if (it.kind === 'exact') n++;
+        else break;
+      }
+      return n;
+    }
+
+    // Form noktaları tıklanabilir: her dolu nokta bir buton; tıklayınca maç
+    // detayı (takımlar, tahmin, sonuç, puan) popover olarak açılır.
+    const formDotsRegistry = [];
     function formDotsHTML(historyNewestFirst) {
       // Display oldest → newest (left to right), last FORM_LENGTH picks
       const slice = historyNewestFirst.slice(0, FORM_LENGTH).reverse();
@@ -6067,7 +6224,17 @@
         if (!it) {
           html += `<span class="form-dot empty" title="Henüz maç yok">·</span>`;
         } else {
-          html += `<span class="form-dot ${it.kind}" title="${titles[it.kind] || it.kind}">${labels[it.kind] || '?'}</span>`;
+          const regIdx = formDotsRegistry.length;
+          formDotsRegistry.push({
+            teams: `${it.homeTeam != null ? it.homeTeam : '?'} — ${it.awayTeam != null ? it.awayTeam : '?'}`,
+            date: it.datetime ? formatMatchTime(it.datetime) : '—',
+            pred: `${it.homePred != null ? it.homePred : '?'}-${it.awayPred != null ? it.awayPred : '?'}`,
+            result: `${it.homeScore != null ? it.homeScore : '?'}-${it.awayScore != null ? it.awayScore : '?'}`,
+            kind: it.kind,
+            kindLabel: titles[it.kind] || it.kind,
+            pts: it.pts
+          });
+          html += `<button type="button" class="form-dot ${it.kind}" onclick="event.stopPropagation(); showFormDotInfo(this, ${regIdx})" title="${titles[it.kind] || it.kind} — maç detayı için tıkla">${labels[it.kind] || '?'}</button>`;
         }
       }
       return html;
@@ -6078,6 +6245,83 @@
         return `<span class="streak-badge" title="Son ${streak} maçta üst üste sonuç bildi"><span class="streak-fire">🔥</span>${streak}</span>`;
       }
       return `<span class="streak-badge cold" title="Aktif sonuç serisi yok">—</span>`;
+    }
+
+    function exactStreakBadgeHTML(streak) {
+      if (streak > 0) {
+        const cls = streak >= 3 ? 'hot' : '';
+        return `<span class="exact-streak-badge ${cls}" title="Son ${streak} maçta üst üste tam skor bildi"><span class="exact-streak-icon">🎯</span>${streak}</span>`;
+      }
+      return `<span class="exact-streak-badge cold" title="Aktif skor isabet serisi yok">—</span>`;
+    }
+
+    // ================== FORM DOT POPOVER (maç detayı) ==================
+    let formDotCleanup = null;
+    function showFormDotInfo(dotEl, regIdx) {
+      const info = formDotsRegistry[regIdx];
+      if (!info) return;
+      const pop = document.getElementById('formdot-pop');
+      if (!pop) return;
+
+      // Önce açıksa temizle
+      if (formDotCleanup) { formDotCleanup(); formDotCleanup = null; }
+
+      const kindEl = document.getElementById('formdot-pop-kind');
+      const teamsEl = document.getElementById('formdot-pop-teams');
+      const dateEl = document.getElementById('formdot-pop-date');
+      const detailEl = document.getElementById('formdot-pop-detail');
+
+      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+      kindEl.innerHTML = `<span class="form-dot ${info.kind}">${labels[info.kind] || '?'}</span> ${escapeHTML(info.kindLabel)}`;
+      teamsEl.textContent = info.teams;
+      dateEl.textContent = info.date;
+      const ptsClass = info.pts > 0 ? 'positive' : 'zero';
+      const ptsText = info.pts > 0 ? `+${formatPoints(info.pts)}` : '0';
+      detailEl.innerHTML = `Tahmin: <strong>${escapeHTML(info.pred)}</strong> &nbsp;•&nbsp; Sonuç: <span class="formdot-pop-result">${escapeHTML(info.result)}</span><br><span class="formdot-pop-pts ${ptsClass}">${ptsText} puan</span>`;
+
+      pop.classList.remove('hidden');
+
+      // Akıllı konumlandırma: tıklanan noktanın yakınına yerleştir
+      requestAnimationFrame(() => {
+        const card = pop.querySelector('.formdot-pop-card');
+        if (!card || !dotEl) return;
+        const rect = dotEl.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 12;
+
+        const placeBelow = rect.bottom + 10 + cardRect.height < vh - margin;
+        let top = placeBelow ? rect.bottom + 10 : rect.top - cardRect.height - 10;
+        let left = rect.left + rect.width / 2 - cardRect.width / 2;
+
+        left = Math.max(margin, Math.min(left, vw - cardRect.width - margin));
+        top = Math.max(margin, Math.min(top, vh - cardRect.height - margin));
+
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+        card.classList.toggle('flip-down', !placeBelow);
+
+        // Ok işaretini tıklanan noktaya hizala
+        const arrowLeft = Math.max(16, Math.min(rect.left + rect.width / 2 - left, cardRect.width - 16));
+        card.style.setProperty('--arrow-left', arrowLeft + 'px');
+      });
+
+      // Kapatma: ESC + scroll + dış tık (overlay onclick)
+      const onEsc = (e) => { if (e.key === 'Escape') closeFormDotPop(); };
+      const onScroll = () => closeFormDotPop();
+      document.addEventListener('keydown', onEsc);
+      window.addEventListener('scroll', onScroll, { passive: true });
+      formDotCleanup = () => {
+        document.removeEventListener('keydown', onEsc);
+        window.removeEventListener('scroll', onScroll);
+      };
+    }
+
+    function closeFormDotPop() {
+      const pop = document.getElementById('formdot-pop');
+      if (pop) pop.classList.add('hidden');
+      if (formDotCleanup) { formDotCleanup(); formDotCleanup = null; }
     }
 
     async function ensureLeaderboardFormData() {
@@ -6107,6 +6351,7 @@
       if (!tbody) return;
       tbody.innerHTML = '';
       if (podium) podium.innerHTML = '';
+      formDotsRegistry.length = 0;
 
       ensureLeaderboardFormData();
 
@@ -6138,7 +6383,8 @@
           displayName: profile.displayName || profile.email || 'Bilinmeyen',
           points: pointsMap[uid],
           history,
-          streak: computeStreak(history)
+          streak: computeStreak(history),
+          exactStreak: computeExactStreak(history)
         };
       }).sort((a, b) => b.points - a.points);
 
@@ -6164,7 +6410,7 @@
             <div class="podium-medal">${rank}</div>
             <div class="podium-name" title="${escapeHTML(row.displayName)}">${escapeHTML(row.displayName)}</div>
             <div class="podium-form" aria-label="Son ${FORM_LENGTH} maç formu">${formDotsHTML(row.history)}</div>
-            <div class="podium-streak">${streakBadgeHTML(row.streak)}</div>
+            <div class="podium-streak">${streakBadgeHTML(row.streak)}${exactStreakBadgeHTML(row.exactStreak)}</div>
             <div class="podium-pts">
               <span class="podium-pts-val">${formatPoints(row.points)}</span>
               <span class="podium-pts-unit">puan</span>
@@ -6194,7 +6440,7 @@
             <div class="lb-user-cell">
               <div class="lb-user-top">
                 <div class="user-display-name">${escapeHTML(row.displayName)}</div>
-                ${streakBadgeHTML(row.streak)}
+                ${streakBadgeHTML(row.streak)}${exactStreakBadgeHTML(row.exactStreak)}
               </div>
               <div class="lb-form" aria-label="Son ${FORM_LENGTH} maç formu">${formDotsHTML(row.history)}</div>
             </div>
