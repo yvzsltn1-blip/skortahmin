@@ -1,0 +1,55 @@
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build / dist
+dist/
+build/
+.cache/
+*.local
+
+# Android / Capacitor (yerel derleme çıktıları)
+android/app/build/
+android/build/
+android/.gradle/
+android/captures/
+android/local.properties
+*.apk
+*.aab
+*.ap_
+
+# Yerel Android SDK / araç zinciri (çok büyük, GitHub'a gitmemeli)
+.apk-toolchain/
+.android-sdk/
+**/platforms/android-*/
+
+# Loglar ve yedekler
+*.log
+*.tmp
+*.bak
+index.backup-*.html
+
+# Env / gizli anahtarlar
+.env
+.env.*
+!.env.example
+**/google-services.json
+**/GoogleService-Info.plist
+serviceAccount*.json
+*-firebase-adminsdk-*.json

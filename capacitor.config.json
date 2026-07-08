@@ -1,0 +1,10 @@
+{
+  "appId": "com.aefylig.skortahmin",
+  "appName": "AEFY LIG",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "url": "https://aefy-lig.web.app",
+    "cleartext": false
+  }
+}

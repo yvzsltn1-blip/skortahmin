@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    match /predictions/{predictionId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && predictionId == request.auth.uid + "_" + request.resource.data.matchId
+        && request.resource.data.homePred is int
+        && request.resource.data.awayPred is int
+        && request.resource.data.homePred >= 0
+        && request.resource.data.awayPred >= 0
+        && request.resource.data.homePred <= 20
+        && request.resource.data.awayPred <= 20
+        && get(/databases/$(database)/documents/matches/$(request.resource.data.matchId)).data.datetime
+          > request.time + duration.value(15, 'm');
+      // Admin may create/overwrite predictions on behalf of any user and assign points.
+      allow create, update: if isAdmin()
+        && predictionId == request.resource.data.uid + "_" + request.resource.data.matchId
+        && request.resource.data.homePred is int
+        && request.resource.data.awayPred is int
+        && request.resource.data.homePred >= 0
+        && request.resource.data.awayPred >= 0
+        && request.resource.data.homePred <= 20
+        && request.resource.data.awayPred <= 20;
+      allow delete: if isAdmin();
+    }
+
+    match /matches/{matchId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /notificationTokens/{tokenId} {
+      allow read: if isAdmin();
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.token is string
+        && request.resource.data.enabled is bool;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /adminNotifications/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.body is string;
+      allow update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.isAdmin == (request.auth.token.email == "admin@aefy-lig.com");
+      allow update: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == userId
+          && request.auth.token.email == "admin@aefy-lig.com"
+          && request.resource.data.isAdmin == true
+        )
+        || (
+          signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.isAdmin == resource.data.isAdmin
+          && request.resource.data.email == resource.data.email
+        );
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "aefy-lig-skor-tahmin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-web.ps1"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/push-notifications": "^7.0.0"
+  }
+}
