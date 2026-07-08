@@ -1586,7 +1586,7 @@
       letter-spacing: 1px;
       padding: 14px 18px;
       border-bottom: 1px solid var(--border-color);
-      background: rgba(255,255,255,0.012);
+      background: linear-gradient(180deg, rgba(232,197,71,0.05), rgba(255,255,255,0.012));
     }
 
     .leaderboard-row {
@@ -1594,11 +1594,12 @@
       transition: var(--transition);
     }
 
-    .leaderboard-row:hover { background: rgba(255,255,255,0.015); }
+    .leaderboard-row:hover { background: rgba(255,255,255,0.028); }
 
     .leaderboard-row.current-user {
-      background: rgba(0,230,118,0.045) !important;
+      background: linear-gradient(90deg, rgba(0,230,118,0.11), rgba(0,230,118,0.03)) !important;
       border-left: 4px solid var(--accent);
+      box-shadow: inset 3px 0 16px rgba(0,230,118,0.13);
     }
 
     .leaderboard-table td { padding: 13px 18px; font-size: 0.92rem; vertical-align: middle; }
@@ -1746,6 +1747,192 @@
       background: rgba(0,230,118,0.14);
       border-color: rgba(0,230,118,0.45);
       transform: translateY(-1px);
+    }
+
+    /* ============== PREMIUM PODIUM (Puan Durumu — ilk üç) ============== */
+    .lb-title { gap: 9px; }
+    .lb-title-emoji {
+      font-size: 1.15rem;
+      filter: drop-shadow(0 2px 6px rgba(232,197,71,0.5));
+      animation: lb-trophy-bob 3.4s ease-in-out infinite;
+    }
+    @keyframes lb-trophy-bob {
+      0%, 100% { transform: translateY(0) rotate(-5deg); }
+      50% { transform: translateY(-3px) rotate(5deg); }
+    }
+
+    .lb-podium {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 14px;
+      margin: 0.3rem 0 1.5rem;
+      flex-wrap: nowrap;
+    }
+    .lb-podium.empty { display: none; }
+
+    .podium-card {
+      position: relative;
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 1.5rem 0.85rem 1.15rem;
+      border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+      border: 1px solid var(--border-color);
+      transition: transform .24s cubic-bezier(0.23,1,0.32,1), box-shadow .24s, border-color .24s;
+    }
+    .podium-card:hover { transform: translateY(-4px); }
+
+    .podium-card.podium-rank-1 {
+      order: 2;
+      transform: translateY(-12px);
+      background: linear-gradient(180deg, rgba(232,197,71,0.14), rgba(232,197,71,0.02));
+      border-color: rgba(232,197,71,0.42);
+      box-shadow: 0 20px 50px rgba(232,197,71,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    .podium-card.podium-rank-1:hover { transform: translateY(-15px); }
+    .podium-card.podium-rank-2 {
+      order: 1;
+      background: linear-gradient(180deg, rgba(180,198,225,0.09), rgba(180,198,225,0.015));
+      border-color: rgba(180,198,225,0.32);
+      box-shadow: 0 12px 38px rgba(142,159,185,0.16);
+    }
+    .podium-card.podium-rank-3 {
+      order: 3;
+      background: linear-gradient(180deg, rgba(243,177,110,0.09), rgba(243,177,110,0.015));
+      border-color: rgba(243,177,110,0.32);
+      box-shadow: 0 12px 38px rgba(194,110,48,0.16);
+    }
+
+    .podium-crown {
+      font-size: 1.55rem;
+      line-height: 1;
+      margin-bottom: 7px;
+      filter: drop-shadow(0 2px 6px rgba(232,197,71,0.55));
+      animation: lb-crown-glow 2.8s ease-in-out infinite;
+    }
+    @keyframes lb-crown-glow {
+      0%, 100% { filter: drop-shadow(0 2px 6px rgba(232,197,71,0.55)); }
+      50% { filter: drop-shadow(0 2px 12px rgba(232,197,71,0.85)); }
+    }
+
+    .podium-medal {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: var(--font-heading); font-weight: 900; font-size: 1.15rem;
+      margin-bottom: 9px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.3);
+    }
+    .podium-card.podium-rank-1 .podium-medal {
+      background: linear-gradient(145deg, #F7E57F, #C8A63A);
+      color: #0A0700;
+      box-shadow: 0 4px 20px rgba(232,197,71,0.6), inset 0 1px 0 rgba(255,255,255,0.45);
+    }
+    .podium-card.podium-rank-2 .podium-medal {
+      background: linear-gradient(145deg, #D8E2F0, #8E9FB9);
+      color: #11161F;
+    }
+    .podium-card.podium-rank-3 .podium-medal {
+      background: linear-gradient(145deg, #F3B16E, #C26E30);
+      color: #1A0D05;
+    }
+
+    .podium-name {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.92rem;
+      color: var(--text-primary);
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 9px;
+      padding: 0 4px;
+    }
+    .podium-form { margin-bottom: 9px; }
+    .podium-streak { margin-bottom: 11px; }
+
+    .podium-pts {
+      display: inline-flex; align-items: baseline; gap: 4px;
+      padding: 6px 15px;
+      border-radius: var(--radius-full);
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border-color);
+    }
+    .podium-card.podium-rank-1 .podium-pts {
+      background: linear-gradient(145deg, rgba(232,197,71,0.2), rgba(232,197,71,0.05));
+      border-color: rgba(232,197,71,0.42);
+    }
+    .podium-pts-val {
+      font-family: var(--font-heading);
+      font-weight: 900;
+      font-size: 1.32rem;
+      color: #fff;
+      line-height: 1;
+    }
+    .podium-card.podium-rank-1 .podium-pts-val {
+      background: linear-gradient(145deg, #F7E57F, #E8C547);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .podium-pts-unit {
+      font-size: 0.58rem; color: var(--text-secondary); font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+
+    .podium-eye {
+      position: absolute; top: 10px; right: 10px;
+      width: 26px; height: 26px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: var(--transition);
+      padding: 0; line-height: 1;
+    }
+    .podium-eye:hover {
+      background: rgba(0,230,118,0.16);
+      border-color: var(--accent);
+      color: var(--accent);
+      transform: scale(1.08);
+    }
+
+    .podium-card.is-me {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+    .podium-card.podium-rank-1.is-me {
+      box-shadow: 0 20px 50px rgba(232,197,71,0.22), 0 0 0 2px var(--accent), inset 0 1px 0 rgba(255,255,255,0.1);
+      outline: none;
+    }
+
+    @media (max-width: 640px) {
+      .lb-podium { gap: 8px; margin-bottom: 1.1rem; }
+      .podium-card { padding: 1.15rem 0.5rem 0.95rem; }
+      .podium-card.podium-rank-1 { transform: translateY(-7px); }
+      .podium-card.podium-rank-1:hover { transform: translateY(-9px); }
+      .podium-medal { width: 38px; height: 38px; font-size: 1rem; margin-bottom: 7px; }
+      .podium-name { font-size: 0.78rem; margin-bottom: 7px; }
+      .podium-pts { padding: 5px 11px; }
+      .podium-pts-val { font-size: 1.1rem; }
+      .podium-crown { font-size: 1.2rem; margin-bottom: 5px; }
+      .podium-form { margin-bottom: 7px; }
+      .podium-streak { margin-bottom: 8px; }
+    }
+    @media (max-width: 380px) {
+      .podium-name { font-size: 0.72rem; }
+      .podium-pts-val { font-size: 1rem; }
+      .podium-medal { width: 34px; height: 34px; font-size: 0.9rem; }
+      .podium-card .lb-form { gap: 3px; }
+      .podium-card .form-dot { width: 12px; height: 12px; font-size: 0.45rem; }
     }
 
     /* Rules / scoring guide page */
@@ -3501,7 +3688,7 @@
     <div id="view-leaderboard" class="hidden">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Puan Durumu</h2>
+          <h2 class="section-title lb-title"><span class="lb-title-emoji">🏆</span> Puan Durumu</h2>
           <p class="section-subtitle">Son 5 maç formu ve isabet serisi. Detay için 👁️, kurallar için aşağıdaki butona bak.</p>
         </div>
         <div class="section-header-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
@@ -3509,6 +3696,11 @@
           <select id="leaderboard-tournament-filter" class="input-field tournament-filter" onchange="onLeaderboardFilterChange(this.value)"></select>
         </div>
       </div>
+
+      <!-- Premium podium: ilk üç (JS ile doldurulur) -->
+      <div id="leaderboard-podium" class="lb-podium" aria-label="İlk üç sıra"></div>
+
+      <!-- Tam sıralama tablosu -->
       <div class="leaderboard-card">
         <table class="leaderboard-table">
           <thead>
@@ -5910,8 +6102,11 @@
 
     function renderLeaderboard() {
       const tbody = document.getElementById('leaderboard-body');
+      const podium = document.getElementById('leaderboard-podium');
+      const table = document.querySelector('#view-leaderboard .leaderboard-table');
       if (!tbody) return;
       tbody.innerHTML = '';
+      if (podium) podium.innerHTML = '';
 
       ensureLeaderboardFormData();
 
@@ -5948,18 +6143,49 @@
       }).sort((a, b) => b.points - a.points);
 
       if (rows.length === 0) {
+        if (podium) podium.classList.add('empty');
+        if (table) table.style.display = '';
         tbody.innerHTML = `<tr><td colspan="3" class="leaderboard-empty">Henüz puan yok. Admin maç sonucunu ve puanlarını girdikçe tablo güncellenir.</td></tr>`;
         return;
       }
 
-      rows.forEach((row, idx) => {
-        const rank = idx + 1;
-        let rankClass = 'rank-other';
-        let rankContent = rank;
-        if (rank === 1) rankClass = 'rank-1';
-        if (rank === 2) rankClass = 'rank-2';
-        if (rank === 3) rankClass = 'rank-3';
+      // ---- Premium podium: ilk üç ----
+      const PODIUM_COUNT = 3;
+      if (podium) {
+        podium.classList.remove('empty');
+        rows.slice(0, PODIUM_COUNT).forEach((row, idx) => {
+          const rank = idx + 1;
+          const isMe = !!(currentUser && row.uid === currentUser.uid);
+          const card = document.createElement('div');
+          card.className = `podium-card podium-rank-${rank}${isMe ? ' is-me' : ''}`;
+          card.innerHTML = `
+            ${rank === 1 ? '<div class="podium-crown">👑</div>' : ''}
+            <button class="podium-eye" onclick="event.stopImmediatePropagation(); showUserBreakdown('${row.uid}')" title="${escapeHTML(row.displayName)} — puan detayı">👁️</button>
+            <div class="podium-medal">${rank}</div>
+            <div class="podium-name" title="${escapeHTML(row.displayName)}">${escapeHTML(row.displayName)}</div>
+            <div class="podium-form" aria-label="Son ${FORM_LENGTH} maç formu">${formDotsHTML(row.history)}</div>
+            <div class="podium-streak">${streakBadgeHTML(row.streak)}</div>
+            <div class="podium-pts">
+              <span class="podium-pts-val">${formatPoints(row.points)}</span>
+              <span class="podium-pts-unit">puan</span>
+            </div>
+          `;
+          podium.appendChild(card);
+        });
+      }
 
+      // ---- Kalan sıralama: 4. sıradan itibaren tabloda ----
+      const rest = rows.slice(PODIUM_COUNT);
+      if (rest.length === 0) {
+        if (table) table.style.display = 'none';
+        return;
+      }
+      if (table) table.style.display = '';
+
+      rest.forEach((row, i) => {
+        const rank = PODIUM_COUNT + i + 1;
+        const rankClass = 'rank-other';
+        const rankContent = rank;
         const tr = document.createElement('tr');
         tr.className = `leaderboard-row ${currentUser && row.uid === currentUser.uid ? 'current-user' : ''}`;
         tr.innerHTML = `
