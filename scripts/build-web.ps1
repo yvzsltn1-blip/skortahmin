@@ -9,6 +9,8 @@ if (Test-Path $dist) {
 
 New-Item -ItemType Directory -Path $dist | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "index.html") -Destination (Join-Path $dist "index.html") -Force
+Copy-Item -LiteralPath (Join-Path $root "styles.css") -Destination (Join-Path $dist "styles.css") -Force
+Copy-Item -LiteralPath (Join-Path $root "app.js") -Destination (Join-Path $dist "app.js") -Force
 
 # Kupa müzesi görselleri (APK içine de kopyalanır)
 $kupaSrc = Join-Path $root "kupa"
