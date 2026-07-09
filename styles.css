@@ -4179,11 +4179,69 @@
     .admin-cup-field input:focus { outline: none; border-color: var(--accent-gold); }
     .admin-user-row.has-cups { flex-wrap: wrap; }
 
+    /* ---- Mobil: Kupa Müzesi (≤600px) — PC'deki zarif görünümün
+           dar ekranlara derli topluk, dengeli uyarlanması ---- */
     @media (max-width: 600px) {
-      .museum-shelf { grid-template-columns: repeat(2, 1fr); gap: 0.7rem; padding: 1.1rem 0.9rem 1.3rem; }
-      .trophy-stage { height: 130px; }
-      .trophy-img { max-height: 130px; }
-      .museum-rank-total b { font-size: 1.25rem; }
-      .museum-cabinet-head { padding: 0.9rem 1rem; gap: 0.6rem; }
+      /* Hero — daha sıkı ve zarif */
+      .museum-hero { padding: 1.7rem 1.1rem 1.55rem; margin-bottom: 1.2rem; }
+      .museum-hero-icon { font-size: 2.3rem; }
+      .museum-hero-sub { font-size: 0.85rem; line-height: 1.45; }
+
+      /* Sıralama tablosu — derli topluk satırlar */
+      .museum-rank-card { margin-bottom: 1.25rem; }
+      .museum-rank-head { padding: 0.8rem 1rem; font-size: 0.92rem; }
+      .museum-rank-row { padding: 0.7rem 0.9rem; gap: 0.65rem; }
+      .museum-rank-pos { width: 30px; height: 30px; font-size: 0.82rem; }
+      .museum-rank-name { font-size: 0.9rem; }
+      .museum-rank-mini { gap: 6px; margin-top: 3px; }
+      .museum-rank-mini .mm { font-size: 0.66rem; }
+      .museum-rank-mini .mm img { width: 11px; height: 11px; }
+      .museum-rank-total { gap: 4px; }
+      .museum-rank-total b { font-size: 1.15rem; }
+      .museum-rank-total span { font-size: 0.62rem; }
+      .museum-rank-go { font-size: 1rem; }
+
+      /* Vitrinler — daha sıkı ritim */
+      .museum-cabinets { gap: 1.1rem; }
+      .museum-cabinet-head { padding: 0.8rem 0.9rem; gap: 0.6rem; }
+      .museum-cabinet-rank { width: 34px; height: 34px; font-size: 0.95rem; border-radius: 10px; }
       .museum-cabinet-name { font-size: 1rem; }
+      .museum-cabinet-meta { font-size: 0.72rem; }
+      .museum-cabinet-total { padding: 0.28rem 0.65rem; border-radius: 10px; }
+      .museum-cabinet-total b { font-size: 1.25rem; }
+      .museum-cabinet-total span { font-size: 0.56rem; }
+
+      /* Kupa vitrinleri — kompakt, dengeli kartlar */
+      .museum-shelf { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; padding: 1rem 0.8rem 1.15rem; }
+      .trophy { padding: 1rem 0.5rem 0.8rem; border-radius: 13px; }
+      .trophy-stage { height: 108px; }
+      .trophy-img { max-height: 108px; }
+      .trophy-stage::after { height: 20px; bottom: 2px; }
+      .trophy-name {
+        margin-top: 0.6rem; font-size: 0.76rem; line-height: 1.2;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        overflow: hidden; min-height: 1.84rem;
+      }
+      .trophy-tag { font-size: 0.64rem; margin-top: 3px; }
+      .trophy-count { min-width: 26px; height: 26px; font-size: 0.8rem; top: 5px; right: 5px; }
+      /* Sahip olunmayan kupalar — mobilde daha silik; kazanılan kupalar öne çıksın */
+      .trophy.dim { opacity: 0.26; }
+      .trophy.dim .trophy-name { font-size: 0.72rem; }
+      /* Açılan sezon etiketleri */
+      .trophy-seasons { gap: 4px; margin-top: 0.55rem; padding-top: 0.55rem; }
+      .season-pill { font-size: 0.68rem; padding: 3px 7px; }
+    }
+
+    /* ---- Dar telefonlar (≤380px) — iPhone SE / eski Androidler ---- */
+    @media (max-width: 380px) {
+      .museum-hero { padding: 1.4rem 0.9rem 1.3rem; }
+      .museum-hero-icon { font-size: 2rem; }
+      .museum-shelf { gap: 0.5rem; padding: 0.85rem 0.65rem 1rem; }
+      .trophy { padding: 0.85rem 0.4rem 0.7rem; }
+      .trophy-stage { height: 96px; }
+      .trophy-img { max-height: 96px; }
+      .trophy-name { font-size: 0.72rem; min-height: 1.74rem; }
+      .trophy-count { min-width: 24px; height: 24px; font-size: 0.76rem; }
+      .museum-cabinet-total b { font-size: 1.15rem; }
+      .museum-rank-total b { font-size: 1.05rem; }
     }
