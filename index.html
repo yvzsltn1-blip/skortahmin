@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-store, max-age=0, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="app-version" content="2026-07-08-form-streak">
+  <meta name="app-version" content="2026-07-09-logo-premium">
   <title>AEFY LİG ⚽ | Skor Tahmin</title>
   
   <!-- Firebase Compat SDKs -->
@@ -22,9 +22,45 @@
   <header>
     <div class="header-container">
       <div class="logo-container">
-        <div class="logo-badge">90'</div>
-        <div>
-          <h1 class="logo-text">AEFY<span>LİG</span></h1>
+        <div class="logo-badge" aria-hidden="true">
+          <svg class="logo-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="logoRing" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#00E676"/>
+                <stop offset="0.55" stop-color="#00C853"/>
+                <stop offset="1" stop-color="#E8C547"/>
+              </linearGradient>
+              <linearGradient id="logoBall" x1="12" y1="6" x2="36" y2="30" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#FFFFFF"/>
+                <stop offset="1" stop-color="#D8DEE8"/>
+              </linearGradient>
+              <linearGradient id="logoScore" x1="10" y1="28" x2="38" y2="44" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#0A1018"/>
+                <stop offset="1" stop-color="#05080D"/>
+              </linearGradient>
+              <filter id="logoGlow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="1.4" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <!-- Outer glow ring -->
+            <circle cx="24" cy="18" r="15.5" stroke="url(#logoRing)" stroke-width="1.5" opacity="0.35"/>
+            <circle cx="24" cy="18" r="13.2" fill="url(#logoBall)" filter="url(#logoGlow)"/>
+            <circle cx="24" cy="18" r="13.2" stroke="#0B1220" stroke-width="1.35"/>
+            <!-- Ball pentagon + seams -->
+            <path d="M24 12.2 L27.6 14.8 L26.2 19 L21.8 19 L20.4 14.8 Z" fill="#0B1220"/>
+            <path d="M24 12.2 L20.4 14.8 M24 12.2 L27.6 14.8 M20.4 14.8 L17.2 12.6 M27.6 14.8 L30.8 12.6 M21.8 19 L18.6 22.4 M26.2 19 L29.4 22.4 M17.2 12.6 L14.8 17.2 M30.8 12.6 L33.2 17.2 M14.8 17.2 L18.6 22.4 M33.2 17.2 L29.4 22.4" stroke="#0B1220" stroke-width="1.35" stroke-linecap="round"/>
+            <!-- Scoreboard -->
+            <rect x="9" y="29.5" width="30" height="13.5" rx="3.5" fill="url(#logoScore)" stroke="url(#logoRing)" stroke-width="1.4"/>
+            <text x="24" y="39.2" text-anchor="middle" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="8.5" font-weight="800" fill="#00E676" letter-spacing="0.5">2-1</text>
+            <!-- Specular highlight -->
+            <ellipse cx="19.5" cy="12.5" rx="3.2" ry="2" fill="white" opacity="0.45"/>
+          </svg>
+        </div>
+        <div class="logo-brand">
+          <h1 class="logo-text">
+            <span class="logo-aefy">AEFY</span><span class="logo-lig">LİG</span>
+          </h1>
         </div>
         <div class="logo-tagline">Arkadaş Skor Tahmin</div>
       </div>
@@ -46,7 +82,29 @@
   <!-- SPLASH / YÜKLENİYOR (oturum kontrol edilirken) -->
   <div id="splash-screen" class="app-container splash-screen">
     <div class="splash-inner">
-      <div class="splash-logo">⚽</div>
+      <div class="splash-logo" aria-hidden="true">
+        <svg class="logo-mark logo-mark--lg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="splashRing" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00E676"/><stop offset="0.55" stop-color="#00C853"/><stop offset="1" stop-color="#E8C547"/>
+            </linearGradient>
+            <linearGradient id="splashBall" x1="12" y1="6" x2="36" y2="30" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D8DEE8"/>
+            </linearGradient>
+            <linearGradient id="splashScore" x1="10" y1="28" x2="38" y2="44" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#0A1018"/><stop offset="1" stop-color="#05080D"/>
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="18" r="15.5" stroke="url(#splashRing)" stroke-width="1.5" opacity="0.35"/>
+          <circle cx="24" cy="18" r="13.2" fill="url(#splashBall)"/>
+          <circle cx="24" cy="18" r="13.2" stroke="#0B1220" stroke-width="1.35"/>
+          <path d="M24 12.2 L27.6 14.8 L26.2 19 L21.8 19 L20.4 14.8 Z" fill="#0B1220"/>
+          <path d="M24 12.2 L20.4 14.8 M24 12.2 L27.6 14.8 M20.4 14.8 L17.2 12.6 M27.6 14.8 L30.8 12.6 M21.8 19 L18.6 22.4 M26.2 19 L29.4 22.4 M17.2 12.6 L14.8 17.2 M30.8 12.6 L33.2 17.2 M14.8 17.2 L18.6 22.4 M33.2 17.2 L29.4 22.4" stroke="#0B1220" stroke-width="1.35" stroke-linecap="round"/>
+          <rect x="9" y="29.5" width="30" height="13.5" rx="3.5" fill="url(#splashScore)" stroke="url(#splashRing)" stroke-width="1.4"/>
+          <text x="24" y="39.2" text-anchor="middle" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="8.5" font-weight="800" fill="#00E676" letter-spacing="0.5">2-1</text>
+          <ellipse cx="19.5" cy="12.5" rx="3.2" ry="2" fill="white" opacity="0.45"/>
+        </svg>
+      </div>
       <div class="splash-spinner"></div>
       <p class="splash-text">Yükleniyor…</p>
     </div>
@@ -55,8 +113,30 @@
   <!-- AUTH SCREEN -->
   <div id="auth-screen" class="app-container hidden">
     <div class="auth-container">
-      <div class="auth-logo">⚽</div>
-      <h2 class="auth-title">AEFY LİG</h2>
+      <div class="auth-logo" aria-hidden="true">
+        <svg class="logo-mark logo-mark--lg" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="authRing" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00E676"/><stop offset="0.55" stop-color="#00C853"/><stop offset="1" stop-color="#E8C547"/>
+            </linearGradient>
+            <linearGradient id="authBall" x1="12" y1="6" x2="36" y2="30" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D8DEE8"/>
+            </linearGradient>
+            <linearGradient id="authScore" x1="10" y1="28" x2="38" y2="44" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#0A1018"/><stop offset="1" stop-color="#05080D"/>
+            </linearGradient>
+          </defs>
+          <circle cx="24" cy="18" r="15.5" stroke="url(#authRing)" stroke-width="1.5" opacity="0.35"/>
+          <circle cx="24" cy="18" r="13.2" fill="url(#authBall)"/>
+          <circle cx="24" cy="18" r="13.2" stroke="#0B1220" stroke-width="1.35"/>
+          <path d="M24 12.2 L27.6 14.8 L26.2 19 L21.8 19 L20.4 14.8 Z" fill="#0B1220"/>
+          <path d="M24 12.2 L20.4 14.8 M24 12.2 L27.6 14.8 M20.4 14.8 L17.2 12.6 M27.6 14.8 L30.8 12.6 M21.8 19 L18.6 22.4 M26.2 19 L29.4 22.4 M17.2 12.6 L14.8 17.2 M30.8 12.6 L33.2 17.2 M14.8 17.2 L18.6 22.4 M33.2 17.2 L29.4 22.4" stroke="#0B1220" stroke-width="1.35" stroke-linecap="round"/>
+          <rect x="9" y="29.5" width="30" height="13.5" rx="3.5" fill="url(#authScore)" stroke="url(#authRing)" stroke-width="1.4"/>
+          <text x="24" y="39.2" text-anchor="middle" font-family="Plus Jakarta Sans, Inter, sans-serif" font-size="8.5" font-weight="800" fill="#00E676" letter-spacing="0.5">2-1</text>
+          <ellipse cx="19.5" cy="12.5" rx="3.2" ry="2" fill="white" opacity="0.45"/>
+        </svg>
+      </div>
+      <h2 class="auth-title"><span class="logo-aefy">AEFY</span><span class="logo-lig"> LİG</span></h2>
       <p class="auth-subtitle">Arkadaşlar arasında skor tahmin yarışı</p>
 
       <div class="auth-tabs">

@@ -122,8 +122,11 @@
       gap: 14px;
     }
     .splash-logo {
-      font-size: 2.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       animation: splash-bounce 1.4s ease-in-out infinite;
+      filter: drop-shadow(0 8px 22px rgba(0, 230, 118, 0.35));
     }
     .splash-spinner {
       width: 30px;
@@ -175,58 +178,111 @@
     .logo-container {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
     }
 
     .logo-badge {
       position: relative;
-      background: linear-gradient(145deg, #00E676, #00B35E);
-      color: #010203;
-      font-family: var(--font-heading);
-      font-weight: 800;
-      width: 40px;
-      height: 40px;
-      border-radius: 13px;
+      width: 46px;
+      height: 46px;
+      border-radius: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.18rem;
-      box-shadow: 
-        0 6px 18px rgba(0, 230, 118, 0.35),
-        inset 0 1px 0 rgba(255,255,255,0.45),
-        inset 0 -2px 4px rgba(0,0,0,0.25);
-      transition: transform .2s var(--transition);
+      flex-shrink: 0;
+      background:
+        linear-gradient(155deg, rgba(14, 20, 30, 0.95) 0%, rgba(5, 8, 12, 0.98) 100%);
+      border: 1px solid transparent;
+      background-clip: padding-box;
+      box-shadow:
+        0 0 0 1px rgba(0, 230, 118, 0.22),
+        0 8px 22px rgba(0, 230, 118, 0.22),
+        0 2px 8px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      transition: transform 0.28s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.28s ease;
+      overflow: hidden;
     }
-    .logo-badge:hover { transform: rotate(-5deg) scale(1.04); }
+
+    .logo-badge::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background:
+        radial-gradient(circle at 30% 22%, rgba(0, 230, 118, 0.18) 0%, transparent 55%),
+        radial-gradient(circle at 78% 82%, rgba(232, 197, 71, 0.12) 0%, transparent 50%);
+      pointer-events: none;
+    }
 
     .logo-badge:hover {
-      transform: rotate(-4deg) scale(1.03);
+      transform: translateY(-1px) scale(1.05);
+      box-shadow:
+        0 0 0 1px rgba(0, 230, 118, 0.38),
+        0 12px 28px rgba(0, 230, 118, 0.32),
+        0 4px 12px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
-    /* Tiny soccer ball detail */
-    .logo-badge::after {
-      content: "⚽";
-      position: absolute;
-      font-size: 0.64rem;
-      top: 3px;
-      right: 3px;
-      opacity: 0.25;
-      filter: saturate(0.6);
+    .logo-mark {
+      width: 38px;
+      height: 38px;
+      display: block;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-mark--lg {
+      width: 72px;
+      height: 72px;
+    }
+
+    .logo-brand {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
 
     .logo-text {
       font-family: var(--font-heading);
-      font-size: 1.62rem;
+      font-size: 1.52rem;
       font-weight: 800;
-      letter-spacing: -1.2px;
+      letter-spacing: -0.85px;
       line-height: 1;
+      display: flex;
+      align-items: baseline;
+      gap: 0;
+      position: relative;
+      padding-bottom: 5px;
     }
 
-    .logo-text span {
-      background: linear-gradient(90deg, var(--accent), var(--accent-gold));
+    .logo-aefy {
+      color: var(--text-primary);
+      font-weight: 800;
+      letter-spacing: -0.9px;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .logo-lig {
+      background: linear-gradient(115deg, #00E676 0%, #3DFF9A 42%, #E8C547 100%);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
       font-weight: 800;
+      letter-spacing: -0.55px;
+      margin-left: 1px;
+      filter: drop-shadow(0 0 12px rgba(0, 230, 118, 0.25));
+    }
+
+    .logo-text::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, rgba(0, 230, 118, 0.8) 0%, rgba(232, 197, 71, 0.55) 52%, transparent 100%);
+      opacity: 0.9;
     }
 
     .logo-tagline {
@@ -235,17 +291,31 @@
 
     @media (min-width: 680px) {
       .logo-tagline {
-        display: block;
-        font-size: 0.66rem;
+        display: inline-flex;
+        align-items: center;
+        font-size: 0.6rem;
         font-weight: 700;
-        letter-spacing: 1.5px;
+        letter-spacing: 1.55px;
         text-transform: uppercase;
-        padding: 4px 12px;
-        background: rgba(255, 255, 255, 0.035);
-        border: 1px solid rgba(255,255,255,0.07);
         color: var(--text-secondary);
-        border-radius: 999px;
         white-space: nowrap;
+        padding: 5px 11px;
+        margin-left: 2px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, rgba(0, 230, 118, 0.08), rgba(232, 197, 71, 0.06));
+        border: 1px solid rgba(0, 230, 118, 0.18);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+
+      .logo-tagline::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        margin-right: 7px;
+        background: var(--accent);
+        box-shadow: 0 0 8px rgba(0, 230, 118, 0.7);
+        flex-shrink: 0;
       }
     }
 
@@ -319,8 +389,10 @@
     @media (max-width: 480px) {
       .user-email { display: none; }
       .user-info-card { padding: 5px 9px 5px 6px; }
-      .logo-text { font-size: 1.36rem; }
-      .logo-badge { width: 34px; height: 34px; font-size: 1rem; }
+      .logo-text { font-size: 1.22rem; }
+      .logo-badge { width: 40px; height: 40px; border-radius: 13px; }
+      .logo-mark { width: 32px; height: 32px; }
+      .logo-container { gap: 10px; }
     }
 
     /* ============== AUTH - Dramatic Login Screen ============== */
@@ -349,22 +421,65 @@
     }
 
     .auth-logo {
-      font-size: 3.35rem;
-      margin-bottom: 0.25rem;
-      display: inline-block;
-      filter: drop-shadow(0 4px 14px rgba(0, 230, 118, 0.3));
+      margin-bottom: 0.55rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 88px;
+      height: 88px;
+      border-radius: 24px;
+      background:
+        linear-gradient(155deg, rgba(14, 20, 30, 0.95) 0%, rgba(5, 8, 12, 0.98) 100%);
+      box-shadow:
+        0 0 0 1px rgba(0, 230, 118, 0.28),
+        0 14px 36px rgba(0, 230, 118, 0.22),
+        0 4px 14px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      filter: none;
       line-height: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .auth-logo::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background:
+        radial-gradient(circle at 30% 22%, rgba(0, 230, 118, 0.16) 0%, transparent 55%),
+        radial-gradient(circle at 78% 82%, rgba(232, 197, 71, 0.1) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .auth-logo .logo-mark {
+      position: relative;
+      z-index: 1;
     }
 
     .auth-title {
       font-family: var(--font-heading);
-      font-size: 2.45rem;
+      font-size: 2.35rem;
       font-weight: 800;
-      letter-spacing: -1.6px;
-      background: linear-gradient(135deg, #fff 35%, var(--accent) 92%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      letter-spacing: -1.4px;
       margin-bottom: 0.2rem;
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0;
+    }
+
+    .auth-title .logo-aefy {
+      color: var(--text-primary);
+      -webkit-text-fill-color: var(--text-primary);
+      background: none;
+    }
+
+    .auth-title .logo-lig {
+      background: linear-gradient(115deg, #00E676 0%, #3DFF9A 42%, #E8C547 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
     .auth-subtitle {
