@@ -485,78 +485,6 @@
       return list.sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
     }
 
-    function renderNextMatchFocus() {
-      const panel = document.getElementById('next-match-panel');
-      if (!panel) return;
-
-      const list = nextVisibleMatches();
-      if (!list.length) {
-        panel.classList.add('hidden');
-        panel.innerHTML = '';
-        return;
-      }
-
-      const next = list[0];
-      const userPreds = currentUser
-        ? allPredictions.filter(prediction => prediction.uid === currentUser.uid)
-        : [];
-      const userPredByMatch = Object.fromEntries(userPreds.map(prediction => [prediction.matchId, prediction]));
-      const myPred = userPredByMatch[next.id];
-      const open = canPredict(next.datetime);
-      const cutoff = predictionCutoffTime(next);
-      const countdown = open && cutoff ? formatCountdown(cutoff.getTime() - Date.now()) : 'Kapandı';
-      const nextDateText = next.datetime
-        ? `${formatDayHeading(next.datetime)} · ${next.datetime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`
-        : 'Tarih bekleniyor';
-
-      const openCount = list.filter(match => canPredict(match.datetime)).length;
-      const predictedCount = list.filter(match => userPredByMatch[match.id]).length;
-      const missingCount = list.filter(match => canPredict(match.datetime) && !userPredByMatch[match.id]).length;
-      const statusClass = myPred ? 'done' : (open ? 'open' : 'closed');
-      const statusText = myPred
-        ? `Tahmin yapıldı: ${myPred.homePred}-${myPred.awayPred}`
-        : (open ? 'Tahmin bekliyor' : 'Tahmin kapandı');
-
-      panel.classList.remove('hidden');
-      panel.innerHTML = `
-        <div class="next-match-main">
-          <div class="next-match-kicker">
-            <span>Sıradaki maç</span>
-            ${tournamentBadge(next)}
-          </div>
-          <div class="next-match-teams">
-            <div class="next-match-team">${escapeHTML(next.homeTeam)}</div>
-            <div class="next-match-vs">VS</div>
-            <div class="next-match-team away">${escapeHTML(next.awayTeam)}</div>
-          </div>
-          <div class="next-match-meta">
-            <span>${escapeHTML(nextDateText)}</span>
-            <span class="next-match-status ${statusClass}">${escapeHTML(statusText)}</span>
-          </div>
-        </div>
-        <div class="next-match-side">
-          <div>
-            <div class="countdown-label">Tahmin kapanmasına</div>
-            <div class="countdown-value">${escapeHTML(countdown)}</div>
-          </div>
-          <div class="next-progress">
-            <div class="next-progress-item">
-              <div class="next-progress-value">${predictedCount}/${list.length}</div>
-              <div class="next-progress-label">Tahminin</div>
-            </div>
-            <div class="next-progress-item">
-              <div class="next-progress-value">${missingCount}</div>
-              <div class="next-progress-label">Eksik</div>
-            </div>
-            <div class="next-progress-item">
-              <div class="next-progress-value">${openCount}</div>
-              <div class="next-progress-label">Açık</div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
     function showToast(message, type = 'success') {
       const container = document.getElementById('toast-container');
       const el = document.createElement('div');
@@ -857,7 +785,6 @@
       renderPredictionsView();
       renderArchive();
       renderLeaderboard();
-      renderSummary();
       if (isAdmin && !document.getElementById('view-admin').classList.contains('hidden')) {
         renderAdminMatches();
       }
@@ -972,7 +899,6 @@
     function onFixtureFilterChange(value) {
       fixtureTournamentFilter = value;
       renderMatches();
-      renderNextMatchFocus();
     }
     function onArchiveFilterChange(value) {
       archiveTournamentFilter = value;
@@ -1281,7 +1207,6 @@
       renderMatches();
       renderPredictionsView();
       renderLeaderboard();
-      renderSummary();
       if (isAdmin) {
         renderAdminMatches();
         renderAdminUsers();
@@ -1346,16 +1271,6 @@
         : '';
 
       return `<div class="friends-picks-container">${picks}${remaining}</div>`;
-    }
-
-    function renderSummary() {
-      const ownPredictionCount = currentUser
-        ? allPredictions.filter(prediction => prediction.uid === currentUser.uid).length
-        : 0;
-      document.getElementById('summary-matches').textContent = matches.length;
-      document.getElementById('summary-predictions').textContent = ownPredictionCount;
-      document.getElementById('summary-users').textContent = Object.keys(usersMap).length;
-      renderNextMatchFocus();
     }
 
     function renderMatches() {
@@ -2030,6 +1945,10 @@
       const modal = document.getElementById('predict-confirm-modal');
       document.getElementById('pc-home-name').textContent = match.homeTeam;
       document.getElementById('pc-away-name').textContent = match.awayTeam;
+      const homeBadge = document.getElementById('pc-home-badge');
+      const awayBadge = document.getElementById('pc-away-badge');
+      if (homeBadge) homeBadge.textContent = (match.homeTeam || '?').trim().charAt(0).toUpperCase() || '?';
+      if (awayBadge) awayBadge.textContent = (match.awayTeam || '?').trim().charAt(0).toUpperCase() || '?';
       document.getElementById('pc-home-score').textContent = h;
       document.getElementById('pc-away-score').textContent = a;
       const odd = scoreOddFor(match, h, a);
@@ -4825,7 +4744,6 @@
       if (!el) return;
       const now = new Date();
       el.textContent = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-      renderNextMatchFocus();
     }
 
     // ================== MAIN INIT ==================

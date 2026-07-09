@@ -114,28 +114,11 @@
     <section class="app-hero">
       <div class="hero-content">
         <div class="hero-text">
-          <div class="hero-eyebrow">ARKADAŞ LİGİ · 2026</div>
-          <h2 class="hero-title">Skoru yaz.<br>Sözünü kilitle.</h2>
-          <p class="hero-desc">Her maç için tek tahmin hakkın var. Kaydettikten sonra herkes ne dediğini burada görebilir.</p>
-        </div>
-        <div class="hero-stats">
-          <div class="stat-item">
-            <div id="summary-matches" class="stat-value">0</div>
-            <div class="stat-label">Toplam Maç</div>
-          </div>
-          <div class="stat-item">
-            <div id="summary-predictions" class="stat-value">0</div>
-            <div class="stat-label">Tahmin</div>
-          </div>
-          <div class="stat-item">
-            <div id="summary-users" class="stat-value">0</div>
-            <div class="stat-label">Oyuncu</div>
-          </div>
+          <div class="hero-eyebrow">AEFY Lig <span class="hero-eyebrow-sep"></span> 2026 Sezonu</div>
+          <h2 class="hero-title">Skoru bil,<br><span class="hero-title-accent">zirveye yerleş.</span></h2>
+          <p class="hero-desc">Her maç için skor tahminini yap, isabetin kadar puan topla. Sezon sonunda kupayı en çok bilen kaldırır.</p>
         </div>
       </div>
-      <div id="next-match-panel" class="next-match-panel hidden"></div>
-      <!-- Subtle decorative football accent -->
-      <div style="position:absolute; right:22px; bottom:14px; font-size:3.6rem; opacity:0.065; pointer-events:none; transform:rotate(-14deg); display:none;" class="hero-ball">⚽</div>
     </section>
     
     <!-- NAV / VIEW TABS -->
@@ -666,21 +649,32 @@
   <div id="predict-confirm-modal" class="modal-overlay hidden" onclick="if (event.target.id === 'predict-confirm-modal') resolvePredictConfirm(false)">
     <div class="modal-card predict-confirm-card" onclick="event.stopImmediatePropagation()">
       <div class="predict-confirm-head">
-        <div class="predict-confirm-lock">🔒</div>
+        <span class="predict-confirm-tag">MAÇ TAHMİNİ</span>
+        <div class="predict-confirm-lock">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="11" width="16" height="10" rx="2.5"/>
+            <path d="M8 11V7.5a4 4 0 0 1 8 0V11"/>
+          </svg>
+        </div>
         <h3 class="predict-confirm-title">Tahminini Kilitle</h3>
         <p class="predict-confirm-sub">Onayladıktan sonra bu tahmin <strong>değiştirilemez.</strong></p>
       </div>
 
       <div class="predict-confirm-matchup">
         <div class="pc-team pc-team-home">
+          <span id="pc-home-badge" class="pc-team-badge"></span>
           <span id="pc-home-name" class="pc-team-name"></span>
         </div>
-        <div class="pc-score">
-          <span id="pc-home-score" class="pc-score-num"></span>
-          <span class="pc-score-sep">:</span>
-          <span id="pc-away-score" class="pc-score-num"></span>
+        <div class="pc-scoreboard">
+          <span class="pc-score-label">SKOR</span>
+          <div class="pc-score">
+            <span id="pc-home-score" class="pc-score-num"></span>
+            <span class="pc-score-sep">:</span>
+            <span id="pc-away-score" class="pc-score-num"></span>
+          </div>
         </div>
         <div class="pc-team pc-team-away">
+          <span id="pc-away-badge" class="pc-team-badge"></span>
           <span id="pc-away-name" class="pc-team-name"></span>
         </div>
       </div>
@@ -688,8 +682,14 @@
       <div id="pc-odds" class="pc-odds"></div>
 
       <div class="predict-confirm-actions">
-        <button onclick="resolvePredictConfirm(false)" class="btn btn-secondary">Vazgeç</button>
-        <button onclick="resolvePredictConfirm(true)" class="btn btn-primary pc-confirm-btn">🔒 Evet, Kilitle</button>
+        <button onclick="resolvePredictConfirm(false)" class="btn btn-secondary pc-cancel-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          Vazgeç
+        </button>
+        <button onclick="resolvePredictConfirm(true)" class="btn btn-primary pc-confirm-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>
+          Evet, Kilitle
+        </button>
       </div>
     </div>
   </div>
