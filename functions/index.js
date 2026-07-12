@@ -126,10 +126,14 @@ async function fetchNesineBulletin() {
   if (bulletinCache.data && Date.now() - bulletinCache.at < 5 * 60 * 1000) {
     return bulletinCache.data;
   }
-  const res = await fetch(NESINE_BULLETIN_URL, {
+  // Önbellek kırıcı parametre + no-cache: CDN uçlarının bayat bülten kopyası
+  // döndürmesini engeller (maç bültene yeni eklendiğinde görünmeme sorunu).
+  const res = await fetch(`${NESINE_BULLETIN_URL}?_=${Date.now()}`, {
     headers: {
       "Accept": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache"
     }
   });
   if (!res.ok) throw new Error(`Nesine bulletin HTTP ${res.status}`);
@@ -164,7 +168,7 @@ function nesineEventTime(event) {
   return isNaN(date.getTime()) ? null : date;
 }
 
-function findBulletinEvent(bulletin, match) {
+function findBulletinEvent(bulletin, match, toleranceMs = 36 * 60 * 60 * 1000) {
   const home = normalizeTeamName(match.homeTeam);
   const away = normalizeTeamName(match.awayTeam);
   if (!home || !away) return null;
@@ -194,8 +198,8 @@ function findBulletinEvent(bulletin, match) {
     const diff = eventTime ? Math.abs(eventTime.getTime() - matchMs) : Infinity;
     if (diff < bestDiff) { best = event; bestDiff = diff; }
   }
-  // 36 saatten fazla sapma varsa muhtemelen başka bir karşılaşmadır.
-  return bestDiff <= 36 * 60 * 60 * 1000 ? best : null;
+  // Toleranstan fazla sapma varsa muhtemelen başka bir karşılaşmadır.
+  return bestDiff <= toleranceMs ? best : null;
 }
 
 // MTID 1 = Maç Sonucu (N: 1→"1", 2→"X", 3→"2"), MTID 777 = Maç Skoru (ON: "2:1", "diğer").
@@ -346,6 +350,149 @@ exports.retryMissingOdds = onSchedule({
   }
 });
 
+// ================== FİKSTÜR TARİH SENKRONU (NESINE) ==================
+// Hafta bazlı girilen (dateTbd:true, datetime = yer tutucu) maçların gerçek
+// gün/saatini Nesine bülteninden bulur ve admin onayı için proposedDatetime
+// alanına yazar; datetime'a asla dokunmaz — onay admin panelinden verilir.
+const DATE_SYNC_LOOKAHEAD_MS = 10 * 24 * 60 * 60 * 1000;
+const DATE_SYNC_LOOKBEHIND_MS = 7 * 24 * 60 * 60 * 1000;
+// Yer tutucu (örn. pazar 18:00) gerçek tarihten Cuma-Pazartesi bandında sapabilir.
+const DATE_SYNC_TOLERANCE_MS = 5 * 24 * 60 * 60 * 1000;
+
+async function pendingTbdMatches() {
+  const nowMs = Date.now();
+  const snap = await db.collection("matches").where("dateTbd", "==", true).get();
+  return snap.docs.filter(doc => {
+    const m = doc.data();
+    if (m.finalized) return false;
+    const ms = m.datetime && m.datetime.toMillis ? m.datetime.toMillis() : null;
+    return ms != null
+      && ms > nowMs - DATE_SYNC_LOOKBEHIND_MS
+      && ms < nowMs + DATE_SYNC_LOOKAHEAD_MS;
+  });
+}
+
+// Henüz güncel önerisi olmayan maçlar (retry job'ının "çalışmaya değer mi" testi).
+function needsProposal(match) {
+  return match.proposalStatus !== "pending";
+}
+
+async function proposeFixtureDates(trigger) {
+  const docs = await pendingTbdMatches();
+  const summary = {
+    trigger,
+    checked: docs.length,
+    proposed: 0,
+    unmatched: 0,
+    error: null,
+    details: []
+  };
+
+  if (docs.length) {
+    let bulletin;
+    try {
+      bulletin = await fetchNesineBulletin();
+    } catch (err) {
+      logger.warn("Bulletin fetch failed in date sync.", { error: String(err) });
+      summary.error = String(err);
+      await writeDateSyncSummary(summary);
+      return summary;
+    }
+
+    for (const doc of docs) {
+      try {
+        const match = doc.data();
+        const label = teamLine(match);
+        const event = findBulletinEvent(bulletin, match, DATE_SYNC_TOLERANCE_MS);
+        const eventTime = event ? nesineEventTime(event) : null;
+        if (!eventTime) {
+          summary.unmatched++;
+          summary.details.push({ matchId: doc.id, match: label, status: "unmatched" });
+          continue;
+        }
+
+        const prevMs = match.proposedDatetime && match.proposedDatetime.toMillis
+          ? match.proposedDatetime.toMillis() : null;
+        if (prevMs === eventTime.getTime()) {
+          // Aynı öneri zaten duruyor (bekliyor ya da admin reddetti) — tekrar yazma.
+          if (match.proposalStatus === "pending") summary.proposed++;
+          summary.details.push({
+            matchId: doc.id, match: label, status: match.proposalStatus || "pending",
+            proposed: eventTime.toISOString()
+          });
+          continue;
+        }
+
+        await doc.ref.set({
+          proposedDatetime: Timestamp.fromDate(eventTime),
+          proposalStatus: "pending",
+          proposalSource: "nesine",
+          proposalCheckedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+        summary.proposed++;
+        summary.details.push({
+          matchId: doc.id, match: label, status: "proposed_now",
+          proposed: eventTime.toISOString()
+        });
+        logger.info("Fixture date proposed.", {
+          matchId: doc.id, home: match.homeTeam, away: match.awayTeam,
+          proposed: eventTime.toISOString()
+        });
+      } catch (err) {
+        logger.warn("Date proposal failed for match.", { matchId: doc.id, error: String(err) });
+      }
+    }
+  }
+
+  await writeDateSyncSummary(summary);
+  return summary;
+}
+
+function writeDateSyncSummary(summary) {
+  const { details, ...counts } = summary;
+  return db.collection("settings").doc("fixtureSync").set({
+    ...counts,
+    lastRunAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+// TFF programı genelde çarşamba açıklanır; haftalık ana koşu.
+exports.fixtureDateSyncWeekly = onSchedule({
+  region: REGION,
+  schedule: "every wednesday 12:00",
+  timeZone: TIME_ZONE
+}, async () => {
+  await proposeFixtureDates("weekly");
+});
+
+// Çarşamba çekilemezse (bülten gecikmesi vb.) 12 saatte bir tekrar dener;
+// penceredeki tüm TBD maçların güncel önerisi varsa bülteni hiç çekmez.
+exports.fixtureDateSyncRetry = onSchedule({
+  region: REGION,
+  schedule: "every 12 hours",
+  timeZone: TIME_ZONE
+}, async () => {
+  const docs = await pendingTbdMatches();
+  if (!docs.some(doc => needsProposal(doc.data()))) return;
+  await proposeFixtureDates("retry");
+});
+
+// Admin panelindeki "Nesine'den Tarihleri Çek" butonunun ucu
+// (nesineHealthCheck ile aynı desen: public onRequest + anında sonuç).
+exports.fixtureDateSyncNow = onRequest({
+  region: REGION,
+  invoker: "public",
+  cors: true
+}, async (req, res) => {
+  try {
+    const summary = await proposeFixtureDates("manual");
+    res.json({ ok: true, ...summary });
+  } catch (err) {
+    logger.warn("Manual fixture date sync failed.", { error: String(err) });
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
 // Teşhis ucu: Nesine erişimini test eder ve son 24 saat + gelecekteki maçların
 // oran durumunu listeler. ?run=1 ile oranı eksik olanlar için hemen çekmeyi dener.
 exports.nesineHealthCheck = onRequest({ region: REGION, invoker: "public", cors: true }, async (req, res) => {
@@ -397,10 +544,24 @@ exports.nesineHealthCheck = onRequest({ region: REGION, invoker: "public", cors:
     const bulletin = await fetchNesineBulletin();
     const events = footballEvents(bulletin);
 
+    // ?grep=<isim> → sunucunun gördüğü bültende takım adı ara (eşleşme sorunlarını
+    // ayıklamak için; ör. ?grep=fransa).
+    if (req.query.grep) {
+      const q = String(req.query.grep).toLocaleLowerCase("tr-TR");
+      const hits = ((bulletin && bulletin.sg && bulletin.sg.EA) || [])
+        .filter(e => `${e.HN || ""} ${e.AN || ""}`.toLocaleLowerCase("tr-TR").includes(q))
+        .map(e => ({ HN: e.HN, AN: e.AN, D: e.D, T: e.T, GT: e.GT, ENO: e.ENO, markets: (e.MA || []).length }));
+      res.json({ ok: true, mode: "grep", footballEventCount: events.length, hits });
+      return;
+    }
+
+    // Sadece 7 gün içinde oynanacak maçlar taranır; bülten zaten daha ilerisini içermez.
     const since = Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000);
+    const until = Timestamp.fromMillis(Date.now() + ODDS_LOOKAHEAD_MS);
     const snap = await db.collection("matches")
       .where("finalized", "==", false)
       .where("datetime", ">", since)
+      .where("datetime", "<", until)
       .orderBy("datetime", "desc")
       .get();
 
@@ -635,13 +796,24 @@ async function finalizeMatchWithScore(doc, score) {
   });
 
   const batch = db.batch();
-  batch.set(doc.ref, { ...data, finalized: true, scoreboard }, { merge: true });
-  if (Object.keys(overall).length) {
-    batch.set(db.collection("settings").doc("leaderboard"), {
+  // `finalizedAt` is the cursor used by browsers to pull only newly finished
+  // matches into their form/analysis archive cache.
+  batch.set(doc.ref, {
+    ...data,
+    finalized: true,
+    finalizedAt: FieldValue.serverTimestamp(),
+    scoreboard
+  }, { merge: true });
+  // Write a version signal even for 0-point results. Those results still belong
+  // in every player's recent form and detailed analysis.
+  batch.set(db.collection("settings").doc("leaderboard"), {
+    ...(Object.keys(overall).length ? {
       totals: overall,
       totalsByTournament: { [tournament]: perTour }
-    }, { merge: true });
-  }
+    } : {}),
+    archiveVersion: FieldValue.increment(1),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
 
   // Arşiv gün indeksi (upsertArchiveDayIndex kopyası).
   const dt = toDate(prev.datetime);

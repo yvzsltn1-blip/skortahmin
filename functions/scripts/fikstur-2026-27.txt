@@ -1,0 +1,1019 @@
+1. Hafta
+16 Ağustos 2026
+18:00
+Amed
+Erzurumspor
+18:00
+Gaziantep FK
+Alanyaspor
+18:00
+Başakşehir
+Kocaelispor
+18:00
+Konyaspor
+Ç. Rizespor
+18:00
+Samsunspor
+Göztepe
+18:00
+Gençlerbirliği
+Fenerbahçe
+18:00
+Kasımpaşa
+Trabzonspor
+18:00
+Galatasaray
+Çorum FK
+18:00
+Beşiktaş
+Eyüpspor
+
+2. Hafta
+23 Ağustos 2026
+18:00
+Alanyaspor
+Beşiktaş
+18:00
+Göztepe
+Gençlerbirliği
+18:00
+Trabzonspor
+Başakşehir
+18:00
+Erzurumspor
+Galatasaray
+18:00
+Çorum FK
+Kasımpaşa
+18:00
+Ç. Rizespor
+Samsunspor
+18:00
+Eyüpspor
+Gaziantep FK
+18:00
+Kocaelispor
+Amed
+18:00
+Fenerbahçe
+Konyaspor
+
+3. Hafta
+30 Ağustos 2026
+18:00
+Eyüpspor
+Alanyaspor
+18:00
+Konyaspor
+Kocaelispor
+18:00
+Başakşehir
+Kasımpaşa
+18:00
+Galatasaray
+Göztepe
+18:00
+Gençlerbirliği
+Erzurumspor
+18:00
+Amed
+Trabzonspor
+18:00
+Samsunspor
+Fenerbahçe
+18:00
+Gaziantep FK
+Ç. Rizespor
+18:00
+Beşiktaş
+Çorum FK
+
+4. Hafta
+6 Eylül 2026
+18:00
+Erzurumspor
+Konyaspor
+18:00
+Kasımpaşa
+Amed
+18:00
+Çorum FK
+Eyüpspor
+18:00
+Başakşehir
+Galatasaray
+18:00
+Ç. Rizespor
+Alanyaspor
+18:00
+Trabzonspor
+Gençlerbirliği
+18:00
+Kocaelispor
+Samsunspor
+18:00
+Fenerbahçe
+Beşiktaş
+18:00
+Göztepe
+Gaziantep FK
+
+5. Hafta
+13 Eylül 2026
+18:00
+Gençlerbirliği
+Kasımpaşa
+18:00
+Alanyaspor
+Göztepe
+18:00
+Beşiktaş
+Erzurumspor
+18:00
+Konyaspor
+Trabzonspor
+18:00
+Eyüpspor
+Ç. Rizespor
+18:00
+Galatasaray
+Kocaelispor
+18:00
+Samsunspor
+Çorum FK
+18:00
+Amed
+Başakşehir
+18:00
+Gaziantep FK
+Fenerbahçe
+
+6. Hafta
+20 Eylül 2026
+18:00
+Çorum FK
+Alanyaspor
+18:00
+Erzurumspor
+Samsunspor
+18:00
+Göztepe
+Ç. Rizespor
+18:00
+Amed
+Beşiktaş
+18:00
+Kasımpaşa
+Konyaspor
+18:00
+Fenerbahçe
+Eyüpspor
+18:00
+Kocaelispor
+Gaziantep FK
+18:00
+Başakşehir
+Gençlerbirliği
+18:00
+Trabzonspor
+Galatasaray
+
+7. Hafta
+11 Ekim 2026
+18:00
+Beşiktaş
+Kocaelispor
+18:00
+Ç. Rizespor
+Fenerbahçe
+18:00
+Samsunspor
+Trabzonspor
+18:00
+Eyüpspor
+Göztepe
+18:00
+Galatasaray
+Kasımpaşa
+18:00
+Alanyaspor
+Erzurumspor
+18:00
+Konyaspor
+Başakşehir
+18:00
+Gençlerbirliği
+Amed
+18:00
+Gaziantep FK
+Çorum FK
+
+8. Hafta
+18 Ekim 2026
+18:00
+Kasımpaşa
+Samsunspor
+18:00
+Kocaelispor
+Göztepe
+18:00
+Erzurumspor
+Eyüpspor
+18:00
+Amed
+Konyaspor
+18:00
+Trabzonspor
+Beşiktaş
+18:00
+Çorum FK
+Ç. Rizespor
+18:00
+Başakşehir
+Gaziantep FK
+18:00
+Fenerbahçe
+Alanyaspor
+18:00
+Gençlerbirliği
+Galatasaray
+
+9. Hafta
+25 Ekim 2026
+18:00
+Samsunspor
+Amed
+18:00
+Galatasaray
+Fenerbahçe
+18:00
+Gaziantep FK
+Erzurumspor
+18:00
+Konyaspor
+Gençlerbirliği
+18:00
+Beşiktaş
+Başakşehir
+18:00
+Ç. Rizespor
+Trabzonspor
+18:00
+Eyüpspor
+Kasımpaşa
+18:00
+Alanyaspor
+Kocaelispor
+18:00
+Göztepe
+Çorum FK
+
+10. Hafta
+1 Kasım 2026
+18:00
+Erzurumspor
+Çorum FK
+18:00
+Amed
+Eyüpspor
+18:00
+Fenerbahçe
+Göztepe
+18:00
+Kasımpaşa
+Beşiktaş
+18:00
+Konyaspor
+Galatasaray
+18:00
+Gençlerbirliği
+Alanyaspor
+18:00
+Kocaelispor
+Ç. Rizespor
+18:00
+Trabzonspor
+Gaziantep FK
+18:00
+Başakşehir
+Samsunspor
+
+11. Hafta
+8 Kasım 2026
+18:00
+Alanyaspor
+Trabzonspor
+18:00
+Eyüpspor
+Kocaelispor
+18:00
+Galatasaray
+Amed
+18:00
+Göztepe
+Başakşehir
+18:00
+Gaziantep FK
+Kasımpaşa
+18:00
+Çorum FK
+Fenerbahçe
+18:00
+Samsunspor
+Konyaspor
+18:00
+Ç. Rizespor
+Erzurumspor
+18:00
+Beşiktaş
+Gençlerbirliği
+
+12. Hafta
+22 Kasım 2026
+18:00
+Erzurumspor
+Göztepe
+18:00
+Kocaelispor
+Fenerbahçe
+18:00
+Galatasaray
+Samsunspor
+18:00
+Kasımpaşa
+Alanyaspor
+18:00
+Gençlerbirliği
+Gaziantep FK
+18:00
+Amed
+Ç. Rizespor
+18:00
+Trabzonspor
+Eyüpspor
+18:00
+Başakşehir
+Çorum FK
+18:00
+Konyaspor
+Beşiktaş
+
+13. Hafta
+29 Kasım 2026
+18:00
+Çorum FK
+Kocaelispor
+18:00
+Alanyaspor
+Konyaspor
+18:00
+Göztepe
+Trabzonspor
+18:00
+Beşiktaş
+Galatasaray
+18:00
+Eyüpspor
+Başakşehir
+18:00
+Gaziantep FK
+Amed
+18:00
+Ç. Rizespor
+Kasımpaşa
+18:00
+Samsunspor
+Gençlerbirliği
+18:00
+Fenerbahçe
+Erzurumspor
+
+14. Hafta
+6 Aralık 2026
+18:00
+Trabzonspor
+Çorum FK
+18:00
+Erzurumspor
+Kocaelispor
+18:00
+Başakşehir
+Fenerbahçe
+18:00
+Gençlerbirliği
+Eyüpspor
+18:00
+Konyaspor
+Gaziantep FK
+18:00
+Beşiktaş
+Samsunspor
+18:00
+Amed
+Alanyaspor
+18:00
+Galatasaray
+Ç. Rizespor
+18:00
+Kasımpaşa
+Göztepe
+
+15. Hafta
+13 Aralık 2026
+18:00
+Gaziantep FK
+Beşiktaş
+18:00
+Kocaelispor
+Gençlerbirliği
+18:00
+Fenerbahçe
+Trabzonspor
+18:00
+Alanyaspor
+Samsunspor
+18:00
+Ç. Rizespor
+Başakşehir
+18:00
+Eyüpspor
+Galatasaray
+18:00
+Erzurumspor
+Kasımpaşa
+18:00
+Göztepe
+Konyaspor
+18:00
+Çorum FK
+Amed
+
+16. Hafta
+20 Aralık 2026
+18:00
+Konyaspor
+Eyüpspor
+18:00
+Amed
+Göztepe
+18:00
+Beşiktaş
+Ç. Rizespor
+18:00
+Galatasaray
+Alanyaspor
+18:00
+Samsunspor
+Gaziantep FK
+18:00
+Kasımpaşa
+Fenerbahçe
+18:00
+Gençlerbirliği
+Çorum FK
+18:00
+Trabzonspor
+Kocaelispor
+18:00
+Başakşehir
+Erzurumspor
+
+17. Hafta
+17 Ocak 2027
+18:00
+Çorum FK
+Konyaspor
+18:00
+Kocaelispor
+Kasımpaşa
+18:00
+Ç. Rizespor
+Gençlerbirliği
+18:00
+Erzurumspor
+Trabzonspor
+18:00
+Alanyaspor
+Başakşehir
+18:00
+Göztepe
+Beşiktaş
+18:00
+Eyüpspor
+Samsunspor
+18:00
+Fenerbahçe
+Amed
+18:00
+Gaziantep FK
+Galatasaray
+
+18. Hafta
+24 Ocak 2027
+18:00
+Alanyaspor
+Gaziantep FK
+18:00
+Göztepe
+Samsunspor
+18:00
+Erzurumspor
+Amed
+18:00
+Eyüpspor
+Beşiktaş
+18:00
+Kocaelispor
+Başakşehir
+18:00
+Fenerbahçe
+Gençlerbirliği
+18:00
+Çorum FK
+Galatasaray
+18:00
+Ç. Rizespor
+Konyaspor
+18:00
+Trabzonspor
+Kasımpaşa
+
+19. Hafta
+31 Ocak 2027
+18:00
+Amed
+Kocaelispor
+18:00
+Beşiktaş
+Alanyaspor
+18:00
+Başakşehir
+Trabzonspor
+18:00
+Samsunspor
+Ç. Rizespor
+18:00
+Kasımpaşa
+Çorum FK
+18:00
+Gençlerbirliği
+Göztepe
+18:00
+Galatasaray
+Erzurumspor
+18:00
+Konyaspor
+Fenerbahçe
+18:00
+Gaziantep FK
+Eyüpspor
+
+20. Hafta
+7 Şubat 2027
+18:00
+Kocaelispor
+Konyaspor
+18:00
+Göztepe
+Galatasaray
+18:00
+Trabzonspor
+Amed
+18:00
+Kasımpaşa
+Başakşehir
+18:00
+Fenerbahçe
+Samsunspor
+18:00
+Erzurumspor
+Gençlerbirliği
+18:00
+Alanyaspor
+Eyüpspor
+18:00
+Ç. Rizespor
+Gaziantep FK
+18:00
+Çorum FK
+Beşiktaş
+
+21. Hafta
+14 Şubat 2027
+18:00
+Galatasaray
+Başakşehir
+18:00
+Amed
+Kasımpaşa
+18:00
+Eyüpspor
+Çorum FK
+18:00
+Samsunspor
+Kocaelispor
+18:00
+Konyaspor
+Erzurumspor
+18:00
+Gençlerbirliği
+Trabzonspor
+18:00
+Gaziantep FK
+Göztepe
+18:00
+Beşiktaş
+Fenerbahçe
+18:00
+Alanyaspor
+Ç. Rizespor
+
+22. Hafta
+21 Şubat 2027
+18:00
+Kocaelispor
+Galatasaray
+18:00
+Başakşehir
+Amed
+18:00
+Trabzonspor
+Konyaspor
+18:00
+Kasımpaşa
+Gençlerbirliği
+18:00
+Çorum FK
+Samsunspor
+18:00
+Göztepe
+Alanyaspor
+18:00
+Fenerbahçe
+Gaziantep FK
+18:00
+Ç. Rizespor
+Eyüpspor
+18:00
+Erzurumspor
+Beşiktaş
+
+23. Hafta
+28 Şubat 2027
+18:00
+Ç. Rizespor
+Göztepe
+18:00
+Beşiktaş
+Amed
+18:00
+Samsunspor
+Erzurumspor
+18:00
+Alanyaspor
+Çorum FK
+18:00
+Gençlerbirliği
+Başakşehir
+18:00
+Gaziantep FK
+Kocaelispor
+18:00
+Konyaspor
+Kasımpaşa
+18:00
+Galatasaray
+Trabzonspor
+18:00
+Eyüpspor
+Fenerbahçe
+
+24. Hafta
+7 Mart 2027
+18:00
+Kocaelispor
+Beşiktaş
+18:00
+Erzurumspor
+Alanyaspor
+18:00
+Amed
+Gençlerbirliği
+18:00
+Başakşehir
+Konyaspor
+18:00
+Fenerbahçe
+Ç. Rizespor
+18:00
+Kasımpaşa
+Galatasaray
+18:00
+Çorum FK
+Gaziantep FK
+18:00
+Göztepe
+Eyüpspor
+18:00
+Trabzonspor
+Samsunspor
+
+25. Hafta
+14 Mart 2027
+18:00
+Beşiktaş
+Trabzonspor
+18:00
+Göztepe
+Kocaelispor
+18:00
+Ç. Rizespor
+Çorum FK
+18:00
+Konyaspor
+Amed
+18:00
+Samsunspor
+Kasımpaşa
+18:00
+Gaziantep FK
+Başakşehir
+18:00
+Eyüpspor
+Erzurumspor
+18:00
+Alanyaspor
+Fenerbahçe
+18:00
+Galatasaray
+Gençlerbirliği
+
+26. Hafta
+21 Mart 2027
+18:00
+Başakşehir
+Beşiktaş
+18:00
+Trabzonspor
+Ç. Rizespor
+18:00
+Kasımpaşa
+Eyüpspor
+18:00
+Erzurumspor
+Gaziantep FK
+18:00
+Gençlerbirliği
+Konyaspor
+18:00
+Fenerbahçe
+Galatasaray
+18:00
+Çorum FK
+Göztepe
+18:00
+Kocaelispor
+Alanyaspor
+18:00
+Amed
+Samsunspor
+
+27. Hafta
+4 Nisan 2027
+18:00
+Samsunspor
+Başakşehir
+18:00
+Galatasaray
+Konyaspor
+18:00
+Ç. Rizespor
+Kocaelispor
+18:00
+Alanyaspor
+Gençlerbirliği
+18:00
+Eyüpspor
+Amed
+18:00
+Çorum FK
+Erzurumspor
+18:00
+Gaziantep FK
+Trabzonspor
+18:00
+Göztepe
+Fenerbahçe
+18:00
+Beşiktaş
+Kasımpaşa
+
+28. Hafta
+11 Nisan 2027
+18:00
+Konyaspor
+Samsunspor
+18:00
+Erzurumspor
+Ç. Rizespor
+18:00
+Başakşehir
+Göztepe
+18:00
+Gençlerbirliği
+Beşiktaş
+18:00
+Kasımpaşa
+Gaziantep FK
+18:00
+Kocaelispor
+Eyüpspor
+18:00
+Fenerbahçe
+Çorum FK
+18:00
+Amed
+Galatasaray
+18:00
+Trabzonspor
+Alanyaspor
+
+29. Hafta
+18 Nisan 2027
+18:00
+Eyüpspor
+Trabzonspor
+18:00
+Ç. Rizespor
+Amed
+18:00
+Samsunspor
+Galatasaray
+18:00
+Fenerbahçe
+Kocaelispor
+18:00
+Çorum FK
+Başakşehir
+18:00
+Gaziantep FK
+Gençlerbirliği
+18:00
+Göztepe
+Erzurumspor
+18:00
+Beşiktaş
+Konyaspor
+18:00
+Alanyaspor
+Kasımpaşa
+
+30. Hafta
+25 Nisan 2027
+18:00
+Amed
+Gaziantep FK
+18:00
+Başakşehir
+Eyüpspor
+18:00
+Gençlerbirliği
+Samsunspor
+18:00
+Kasımpaşa
+Ç. Rizespor
+18:00
+Trabzonspor
+Göztepe
+18:00
+Kocaelispor
+Çorum FK
+18:00
+Erzurumspor
+Fenerbahçe
+18:00
+Galatasaray
+Beşiktaş
+18:00
+Konyaspor
+Alanyaspor
+
+31. Hafta
+2 Mayıs 2027
+18:00
+Gaziantep FK
+Konyaspor
+18:00
+Çorum FK
+Trabzonspor
+18:00
+Eyüpspor
+Gençlerbirliği
+18:00
+Kocaelispor
+Erzurumspor
+18:00
+Samsunspor
+Beşiktaş
+18:00
+Alanyaspor
+Amed
+18:00
+Fenerbahçe
+Başakşehir
+18:00
+Göztepe
+Kasımpaşa
+18:00
+Ç. Rizespor
+Galatasaray
+
+32. Hafta
+9 Mayıs 2027
+18:00
+Başakşehir
+Ç. Rizespor
+18:00
+Konyaspor
+Göztepe
+18:00
+Trabzonspor
+Fenerbahçe
+18:00
+Kasımpaşa
+Erzurumspor
+18:00
+Beşiktaş
+Gaziantep FK
+18:00
+Gençlerbirliği
+Kocaelispor
+18:00
+Samsunspor
+Alanyaspor
+18:00
+Galatasaray
+Eyüpspor
+18:00
+Amed
+Çorum FK
+
+33. Hafta
+16 Mayıs 2027
+18:00
+Çorum FK
+Gençlerbirliği
+18:00
+Göztepe
+Amed
+18:00
+Fenerbahçe
+Kasımpaşa
+18:00
+Alanyaspor
+Galatasaray
+18:00
+Erzurumspor
+Başakşehir
+18:00
+Gaziantep FK
+Samsunspor
+18:00
+Ç. Rizespor
+Beşiktaş
+18:00
+Eyüpspor
+Konyaspor
+18:00
+Kocaelispor
+Trabzonspor
+
+34. Hafta
+23 Mayıs 2027
+18:00
+Başakşehir
+Alanyaspor
+18:00
+Beşiktaş
+Göztepe
+18:00
+Galatasaray
+Gaziantep FK
+18:00
+Kasımpaşa
+Kocaelispor
+18:00
+Samsunspor
+Eyüpspor
+18:00
+Amed
+Fenerbahçe
+18:00
+Konyaspor
+Çorum FK
+18:00
+Trabzonspor
+Erzurumspor
+18:00
+Gençlerbirliği
+Ç. Rizespor

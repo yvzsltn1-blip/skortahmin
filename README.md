@@ -132,5 +132,7 @@ Netlify Drop ile de hızlıca deploy edebilirsin ama sen zaten `aefy-lig.web.app
 - Canlı sitede birden fazla arkadaş farklı hesaplarla aynı anda test edebilir.
 - Güvenlik için Firebase Console'dan Firestore kurallarını production'a göre sıkılaştır (şu an test modunda çalışır).
 
+İleride yeni turnuva eklersen aynı scripti node functions/scripts/ofsayt-standings-logos.js <puan-durumu-url> assets/teams şeklinde çalıştırman yeterli.
+
 İyi eğlenceler! ⚽🏆
 Sorun yaşarsan Firebase Console → Authentication ve Hosting sekmelerini kontrol et.

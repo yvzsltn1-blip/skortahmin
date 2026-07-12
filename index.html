@@ -14,6 +14,11 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   
+  <!-- Maç kartı fontları (standalone tasarımla birebir) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap">
+
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -209,10 +214,6 @@
             <span class="icon">📅</span>
             <span>Maçlar</span>
           </button>
-          <button onclick="switchView('predictions')" id="view-btn-predictions" class="nav-btn">
-            <span class="icon">📊</span>
-            <span>Tahminler</span>
-          </button>
           <button onclick="switchView('leaderboard')" id="view-btn-leaderboard" class="nav-btn">
             <span class="icon">🏆</span>
             <span>Puan Durumu</span>
@@ -276,28 +277,19 @@
       </div>
     </div>
 
-    <!-- ALL PREDICTIONS VIEW -->
-    <div id="view-predictions" class="hidden">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title">Açık Defter</h2>
-          <p class="section-subtitle">Kim, hangi maç için ne tahmin yaptı?</p>
-        </div>
-        <div class="section-subtitle">Tahminler kilitlendikten sonra herkes tarafından görülebilir.</div>
-      </div>
-      <div id="predictions-list" class="predictions-board"></div>
-    </div>
-
     <!-- LEADERBOARD VIEW -->
     <div id="view-leaderboard" class="hidden">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title lb-title"><span class="lb-title-emoji">🏆</span> Puan Durumu</h2>
-          <p class="section-subtitle">Son 5 maç formu ve isabet serisi. Detay için 👁️, kurallar için aşağıdaki butona bak.</p>
+      <div class="lb-header">
+        <div class="lb-header-left">
+          <div class="lb-header-icon">🏆</div>
+          <div>
+            <h1 class="lb-header-title">Puan Durumu</h1>
+            <p class="lb-header-sub">Son 5 maç formu ve isabet serisi. Detay için <span class="lb-eye-chip">👁</span>, kurallar için sağdaki butona bak.</p>
+          </div>
         </div>
-        <div class="section-header-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <button type="button" class="lb-rules-link" onclick="switchView('rules')" title="Puan kurallarını oku">📘 Nasıl puan kazanılır?</button>
-          <select id="leaderboard-tournament-filter" class="input-field tournament-filter" onchange="onLeaderboardFilterChange(this.value)"></select>
+        <div class="lb-header-actions">
+          <button type="button" class="lb-rules-link" onclick="switchView('rules')" title="Puan kurallarını oku">📖 Nasıl puan kazanılır?</button>
+          <select id="leaderboard-tournament-filter" class="input-field tournament-filter lb-tournament-filter" onchange="onLeaderboardFilterChange(this.value)"></select>
         </div>
       </div>
 
@@ -318,15 +310,16 @@
             <!-- Populated by JS -->
           </tbody>
         </table>
-        <div class="lb-form-legend" aria-label="Form açıklaması">
-          <span class="lb-form-legend-item"><span class="form-dot exact">S</span> Tam skor</span>
-          <span class="lb-form-legend-item"><span class="form-dot approx">Y</span> Yaklaşma</span>
-          <span class="lb-form-legend-item"><span class="form-dot outcome">1</span> Sadece sonuç</span>
-          <span class="lb-form-legend-item"><span class="form-dot miss">×</span> Iskalama</span>
-          <span class="lb-form-legend-item"><span class="streak-badge"><span class="streak-fire">🔥</span>N</span> Sonuç isabet serisi</span>
-          <span class="lb-form-legend-item"><span class="exact-streak-badge"><span class="exact-streak-icon">🎯</span>N</span> Skor isabet serisi</span>
-          <span class="lb-form-legend-item"><span class="formdot-taphint">👆</span> Noktalara tıkla → maç detayı</span>
-        </div>
+      </div>
+
+      <div class="lb-form-legend" aria-label="Form açıklaması">
+        <span class="lb-form-legend-item"><span class="form-dot exact">S</span> Tam skor</span>
+        <span class="lb-form-legend-item"><span class="form-dot approx">Y</span> Yaklaşma</span>
+        <span class="lb-form-legend-item"><span class="form-dot outcome">1</span> Sadece sonuç</span>
+        <span class="lb-form-legend-item"><span class="form-dot miss">✕</span> Iskalama</span>
+        <span class="lb-form-legend-item"><span class="streak-badge"><span class="streak-fire">🔥</span>N</span> Sonuç isabet serisi</span>
+        <span class="lb-form-legend-item"><span class="exact-streak-badge"><span class="exact-streak-icon">🎯</span>N</span> Skor isabet serisi</span>
+        <span class="lb-form-legend-item"><span class="formdot-taphint">👆</span> Noktalara tıkla → maç detayı</span>
       </div>
 
       <div class="leaderboard-analysis-card">
@@ -462,6 +455,9 @@
         </div>
       </div>
 
+      <!-- Hafta seçici: haftası girilmiş arşiv maçı varsa görünür -->
+      <div id="archive-week-filter" class="tournament-tabs hidden" style="margin-bottom: 0.9rem;"></div>
+
       <div id="archive-list" class="predictions-board"></div>
     </div>
 
@@ -523,23 +519,52 @@
 
         <!-- BULK PASTE -->
         <div class="bulk-paste-section">
-          <h4 class="bulk-paste-title">📋 Toplu Yapıştır (Kopyala-Yapıştır)</h4>
-          <textarea id="bulk-text" rows="5" class="input-field bulk-textarea"
+          <div class="bulk-paste-header">
+            <h4 class="bulk-paste-title">📋 Toplu Yapıştır</h4>
+            <span class="bulk-paste-tag">Fikstür listesi</span>
+          </div>
+          <textarea id="bulk-text" rows="4" class="input-field bulk-textarea"
                     placeholder="Maç listesini buraya yapıştır (Örn:\n18 Haziran Perşembe\n19:00\nÇekya\nGüney Afrika\n...)"></textarea>
-          
-          <div class="admin-btn-group">
-            <button onclick="parseAndAddBulk()" class="btn btn-primary btn-sm">Ayrıştır ve Ekle</button>
-            <button onclick="clearBulkTextarea()" class="btn btn-secondary btn-sm">Temizle</button>
-            <button onclick="loadSampleMatches()" class="btn btn-secondary btn-sm">Örnek Veri Yükle</button>
+          <div class="bulk-paste-controls">
+            <div class="bulk-year-field">
+              <label class="form-label" for="bulk-year">Varsayılan yıl</label>
+              <select id="bulk-year" class="input-field">
+                <option value="2026" selected>2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+              </select>
+            </div>
+            <div class="bulk-year-field">
+              <label class="form-label" for="bulk-week">Hafta no <span style="opacity:.6;">(ops.)</span></label>
+              <input id="bulk-week" type="number" min="1" max="60" placeholder="—" class="input-field">
+            </div>
+            <p class="bulk-year-hint">Metinde yıl yoksa bu seçim uygulanır; tercihin hatırlanır. Metinde "1. Hafta" gibi başlıklar varsa haftalar otomatik algılanır ve tarihleri Nesine'den doğrulanana kadar "tarih onaylanacak" işaretlenir.</p>
+            <div class="admin-btn-group bulk-actions">
+              <button onclick="parseAndAddBulk()" class="btn btn-primary btn-sm">Ayrıştır ve Ekle</button>
+              <button onclick="clearBulkTextarea()" class="btn btn-secondary btn-sm">Temizle</button>
+              <button onclick="loadSampleMatches()" class="btn btn-secondary btn-sm">Örnek Veri</button>
+            </div>
           </div>
         </div>
 
         <!-- Quick add form -->
         <div class="quick-add-form">
+          <div class="quick-add-header">
+            <h4>Hızlı Maç Ekle</h4>
+            <p>Tek bir maçı listeye ekleyin.</p>
+          </div>
           <div class="form-row">
             <div class="form-col">
               <label class="form-label">Tarih (GG.AA)</label>
               <input id="add-date" type="text" value="16.06" placeholder="16.06" class="input-field">
+            </div>
+            <div class="form-col">
+              <label class="form-label">Yıl</label>
+              <select id="add-year" class="input-field">
+                <option value="2026" selected>2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028</option>
+              </select>
             </div>
             <div class="form-col">
               <label class="form-label">Saat (SS:dd)</label>
@@ -553,7 +578,11 @@
               <label class="form-label">Deplasman</label>
               <input id="add-away" type="text" placeholder="Deplasman" class="input-field">
             </div>
-            <div class="form-col btn-col">
+            <div class="form-col">
+              <label class="form-label">Hafta (ops.)</label>
+              <input id="add-week" type="number" min="1" max="60" placeholder="—" class="input-field">
+            </div>
+            <div class="form-col btn-col quick-add-action">
               <button onclick="addMatchToPending()" class="btn btn-secondary">Listeye Ekle</button>
             </div>
           </div>
@@ -577,6 +606,42 @@
         </p>
         <button id="odds-check-btn" onclick="checkMissingOddsNow()" class="btn btn-primary" style="width: auto;">🔄 Oranları Şimdi Kontrol Et</button>
         <div id="odds-check-result" style="margin-top: 0.75rem;"></div>
+
+        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+          <p class="section-subtitle" style="margin-bottom: 0.5rem;">
+            Bültende takım ara: bir maç "bulunamadı" görünüyorsa, sunucunun o an gördüğü
+            Nesine bülteninde maçın olup olmadığını buradan kontrol edebilirsin.
+          </p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <input id="bulletin-search-input" class="input-field" type="text" placeholder="Takım adı (ör. fransa)"
+                   style="flex: 1; min-width: 160px;" onkeydown="if(event.key==='Enter')searchNesineBulletin()">
+            <button id="bulletin-search-btn" onclick="searchNesineBulletin()" class="btn btn-secondary" style="width: auto;">🔍 Bültende Ara</button>
+          </div>
+          <div id="bulletin-search-result" style="margin-top: 0.75rem;"></div>
+        </div>
+      </div>
+
+      <!-- Fixture date proposals (Nesine) -->
+      <div class="admin-card">
+        <h3 class="admin-card-title">📅 Tarih Önerileri (Nesine)</h3>
+        <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          Hafta bazlı eklenen (tarihi henüz resmen açıklanmamış) maçların gerçek gün/saati
+          her çarşamba Nesine bülteninden otomatik denenir; bulunamazsa 12 saatte bir tekrar denenir.
+          Bulunan tarihler burada onayını bekler — onaylayana kadar maçın tarihi değişmez.
+        </p>
+        <button id="date-sync-btn" onclick="requestFixtureDateSync()" class="btn btn-primary" style="width: auto;">🔄 Nesine'den Tarihleri Çek</button>
+        <div id="date-proposals-list" style="margin-top: 0.9rem;"></div>
+      </div>
+
+      <!-- Livescore manual sweep -->
+      <div class="admin-card">
+        <h3 class="admin-card-title">⚽ Skor Kontrolü</h3>
+        <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          Biten maçların skorları otomatik olarak 30 dakikada bir Nesine canlı skor servisinden çekilir.
+          Beklemek istemezsen buradan hemen kontrol başlatabilirsin: skoru kesinleşen maçlar anında puanlanıp arşive taşınır.
+        </p>
+        <button id="score-check-btn" onclick="checkPendingScoresNow()" class="btn btn-primary" style="width: auto;">🔄 Skorları Şimdi Kontrol Et</button>
+        <div id="score-check-result" style="margin-top: 0.75rem;"></div>
       </div>
 
       <!-- All future fixtures — paginated and loaded only when opened -->

@@ -30,6 +30,7 @@
     // Filtre durumları (UI)
     let fixtureTournamentFilter = ALL_TOURNAMENTS;
     let archiveTournamentFilter = null; // will be set to admin's defaultTournament when settings load / archive opened
+    let archiveWeekFilter = null;       // null = tarih görünümü; sayı = o haftanın maçları (hafta görünümü)
     let leaderboardTournamentFilter = ALL_TOURNAMENTS;
     let scoreFrequencySortUid = null; // null = toplam, otherwise user uid
 
@@ -99,10 +100,13 @@
     // sonrasında yalnızca finalizedAt > son senkron olan maçlar (delta) çekilir.
     // archiveEpoch: sonuç temizleme / maç silme / yeniden hesaplama gibi "arşivden
     // çıkarma" işlemlerinde artar → epoch uyuşmazsa önbellek atılır, tam okuma yapılır.
-    const ARCHIVE_CACHE_KEY = 'skorTahminArchiveCache_v1';
+    // v2: v1 could contain auto-finalized matches created without `finalizedAt`.
+    // A one-time cache refresh loads those existing matches, then deltas stay cheap.
+    const ARCHIVE_CACHE_KEY = 'skorTahminArchiveCache_v2';
     let archiveEpoch = 0;                    // settings/leaderboard.archiveEpoch (0 = hiç bump edilmedi)
     let breakdownArchiveMaxFAms = 0;         // önbellekteki en büyük finalizedAt (ms)
     let archiveDeltaSyncing = false;
+    let archiveDeltaQueued = false;          // senkron sürerken yeni istek geldi mi?
 
     function serializeArchiveDoc(m) {
       return {
@@ -116,7 +120,8 @@
         scorePoints: m.scorePoints != null ? m.scorePoints : null,
         scoreboard: Array.isArray(m.scoreboard) ? m.scoreboard : [],
         dt: m.datetime ? m.datetime.getTime() : null,
-        fa: matchFinalizedAtMs(m)
+        fa: matchFinalizedAtMs(m),
+        wk: m.week != null ? m.week : null
       };
     }
 
@@ -133,7 +138,8 @@
         scoreboard: s.scoreboard || [],
         finalized: true,
         datetime: s.dt != null ? new Date(s.dt) : null,
-        finalizedAtMs: s.fa || 0
+        finalizedAtMs: s.fa || 0,
+        week: s.wk != null ? s.wk : null
       };
     }
 
@@ -179,9 +185,50 @@
     let futureFixtureError = '';
     let futureFixtureWindowStart = null;
 
-    const DEFAULT_YEAR = 2026;
+    // Yeni girişlerin varsayılanı takvim yılıdır. Yönetici seçimini cihazında
+    // değiştirebilir; Firestore'daki datetime alanı seçilen yılı taşır.
+    const DEFAULT_YEAR = new Date().getFullYear();
+    const MATCH_YEAR_PREFERENCE_KEY = 'skorTahminDefaultMatchYear';
     const UPCOMING_WINDOW_MS = 4 * 24 * 60 * 60 * 1000; // next 4 days
     const PREDICTION_CUTOFF_MS = 15 * 60 * 1000;
+
+    function isValidMatchYear(year) {
+      return Number.isInteger(year) && year >= 2000 && year <= 2100;
+    }
+
+    function preferredMatchYear() {
+      try {
+        const savedYear = Number(localStorage.getItem(MATCH_YEAR_PREFERENCE_KEY));
+        return isValidMatchYear(savedYear) ? savedYear : DEFAULT_YEAR;
+      } catch (e) {
+        return DEFAULT_YEAR;
+      }
+    }
+
+    function setPreferredMatchYear(value) {
+      const year = Number(value);
+      if (!isValidMatchYear(year)) return;
+      try { localStorage.setItem(MATCH_YEAR_PREFERENCE_KEY, String(year)); } catch (e) {}
+      ['bulk-year', 'add-year'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) select.value = String(year);
+      });
+    }
+
+    function initMatchYearSelectors() {
+      const selectedYear = preferredMatchYear();
+      const years = [...new Set([DEFAULT_YEAR - 1, DEFAULT_YEAR, DEFAULT_YEAR + 1, DEFAULT_YEAR + 2, selectedYear])]
+        .filter(isValidMatchYear)
+        .sort((a, b) => a - b);
+
+      ['bulk-year', 'add-year'].forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        select.innerHTML = years.map(year => `<option value="${year}">${year}</option>`).join('');
+        select.value = String(selectedYear);
+        select.addEventListener('change', () => setPreferredMatchYear(select.value));
+      });
+    }
 
     function isNativeAndroidApp() {
       return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -418,13 +465,23 @@
       return { scoreboard, totalsByUid };
     }
 
-    function parseDateTime(dateStr, timeStr) {
-      const dateParts = dateStr.match(/\d{1,2}/g) || [];
-      const day = parseInt(dateParts[0]);
-      const month = parseInt(dateParts[1]);
-      const [hour, minute] = timeStr.split(':').map(x => parseInt(x));
-      if (!day || !month || isNaN(hour) || isNaN(minute)) return null;
-      return new Date(DEFAULT_YEAR, month - 1, day, hour, minute);
+    function parseDateTime(dateStr, timeStr, fallbackYear = DEFAULT_YEAR) {
+      const dateParts = String(dateStr || '').match(/\d{1,4}/g) || [];
+      const day = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10);
+      const year = dateParts[2] ? parseInt(dateParts[2], 10) : Number(fallbackYear);
+      const [hour, minute] = String(timeStr || '').split(':').map(x => parseInt(x, 10));
+      if (!day || !month || !Number.isInteger(year) || year < 2000 || year > 2100 ||
+          isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+      const dt = new Date(year, month - 1, day, hour, minute);
+      // Date constructor taşan değerleri otomatik düzelttiği için gerçek bir tarih
+      // olduğunu ayrıca doğrula (ör. 31.02.2027 kabul edilmesin).
+      return dt.getFullYear() === year && dt.getMonth() === month - 1 && dt.getDate() === day ? dt : null;
+    }
+
+    function formatDateInput(date) {
+      if (!date) return '';
+      return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${date.getFullYear()}`;
     }
 
     function formatMatchTime(date) {
@@ -433,7 +490,7 @@
       const m = (date.getMonth() + 1).toString().padStart(2, '0');
       const h = date.getHours().toString().padStart(2, '0');
       const mi = date.getMinutes().toString().padStart(2, '0');
-      return `${d}.${m}. ${h}:${mi}`;
+      return `${d}.${m}.${date.getFullYear()} ${h}:${mi}`;
     }
 
     function formatDayHeading(date) {
@@ -441,6 +498,7 @@
       return date.toLocaleDateString('tr-TR', {
         day: 'numeric',
         month: 'long',
+        year: 'numeric',
         weekday: 'long'
       });
     }
@@ -757,10 +815,10 @@
       if (!ms || typeof ms['1'] !== 'number') return '';
       return `
         <div class="odds-strip">
-          <span class="odds-strip-label">İddaa</span>
-          <span class="odds-chip">1 <b>${ms['1'].toFixed(2)}</b></span>
-          <span class="odds-chip">X <b>${ms['X'].toFixed(2)}</b></span>
-          <span class="odds-chip">2 <b>${ms['2'].toFixed(2)}</b></span>
+          <span class="odds-strip-label">İddaa Oranları</span>
+          <span class="odds-chip"><span class="odds-chip-key">1</span><b>${ms['1'].toFixed(2)}</b></span>
+          <span class="odds-chip"><span class="odds-chip-key">X</span><b>${ms['X'].toFixed(2)}</b></span>
+          <span class="odds-chip"><span class="odds-chip-key">2</span><b>${ms['2'].toFixed(2)}</b></span>
         </div>
       `;
     }
@@ -782,7 +840,6 @@
 
     function renderAll() {
       renderMatches();
-      renderPredictionsView();
       renderArchive();
       renderLeaderboard();
       if (isAdmin && !document.getElementById('view-admin').classList.contains('hidden')) {
@@ -902,6 +959,7 @@
     }
     function onArchiveFilterChange(value) {
       archiveTournamentFilter = value;
+      archiveWeekFilter = null;
       archiveDayGroups = [];
       archiveDayDocs = {};
       archiveDayLoading = {};
@@ -948,6 +1006,7 @@
       if (archiveTournamentFilter === value) return;
 
       archiveTournamentFilter = value;
+      archiveWeekFilter = null;
 
       // Reset day state (same as filter change)
       archiveDayGroups = [];
@@ -1205,7 +1264,6 @@
 
     async function refreshAllData() {
       renderMatches();
-      renderPredictionsView();
       renderLeaderboard();
       if (isAdmin) {
         renderAdminMatches();
@@ -1258,6 +1316,7 @@
         const odd = scoreOddFor(match, prediction.homePred, prediction.awayPred);
         return `
           <span class="friend-pick-badge ${ptsClass}">
+            <span class="friend-avatar" aria-hidden="true">${escapeHTML(String(prediction.displayName || '?').trim().charAt(0).toLocaleUpperCase('tr-TR'))}</span>
             <span>${escapeHTML(prediction.displayName)}</span>
             <strong>${prediction.homePred}-${prediction.awayPred}</strong>
             ${odd ? `<em class="pick-odd">${formatScoreOdd(match, odd)}</em>` : ''}
@@ -1271,6 +1330,44 @@
         : '';
 
       return `<div class="friends-picks-container">${picks}${remaining}</div>`;
+    }
+
+    function teamMonogram(teamName) {
+      return String(teamName || '?')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 3)
+        .map(word => word.charAt(0))
+        .join('')
+        .toLocaleUpperCase('tr-TR');
+    }
+
+    // Slug üretimi functions/scripts/ofsayt-fixture-crawl.js teamLogoSlug() ile birebir aynı.
+    function teamLogoSlug(teamName) {
+      return String(teamName || '')
+        .toLocaleLowerCase('tr-TR')
+        .replace(/ı/g, 'i')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    // Logo varsa (assets/teams/<slug>.png) monogramın üzerine biner; 404'te
+    // img kendini kaldırır ve monogram görünür kalır.
+    function teamMark(teamName) {
+      const slug = teamLogoSlug(teamName);
+      const img = slug
+        ? `<img class="team-logo-img" src="assets/teams/${slug}.png" alt="" loading="lazy" onerror="this.remove()">`
+        : '';
+      return `<span class="team-mark" aria-hidden="true">${escapeHTML(teamMonogram(teamName))}${img}</span>`;
+    }
+
+    // Uzun takım adlarında yazıyı kademeli küçültür (satır atlamaz, taşmaz).
+    function teamNameSpan(teamName) {
+      const name = String(teamName || '').trim();
+      const sizeClass = name.length > 18 ? ' name-xlong' : name.length > 11 ? ' name-long' : '';
+      return `<span class="team-name-text${sizeClass}">${escapeHTML(name)}</span>`;
     }
 
     function renderMatches() {
@@ -1309,25 +1406,35 @@
 
       const groupedMatches = new Map();
       upcomingMatches.forEach(match => {
-        const key = getDayKey(match.datetime);
+        // Tarihi resmileşmemiş (dateTbd) maçlar gün yerine hafta başlığı altında
+        // toplanır; yer tutucu tarihi gün başlığı olarak göstermek yanıltıcı olur.
+        const key = match.dateTbd
+          ? `tbd|${tournamentOf(match)}|${match.week || '?'}`
+          : getDayKey(match.datetime);
         if (!groupedMatches.has(key)) groupedMatches.set(key, []);
         groupedMatches.get(key).push(match);
       });
 
       groupedMatches.forEach(dayMatches => {
+        const first = dayMatches[0];
+        const heading = first.dateTbd
+          ? (first.week ? `${first.week}. Hafta • Gün ve saat açıklanmadı` : 'Gün ve saat açıklanmadı')
+          : formatDayHeading(first.datetime);
         const section = document.createElement('section');
         section.className = 'day-group';
         section.innerHTML = `
-          <div class="day-heading">${escapeHTML(formatDayHeading(dayMatches[0].datetime))}</div>
+          <div class="day-heading">${escapeHTML(heading)}<span class="day-count">${dayMatches.length} Maç</span></div>
           <div class="matches-grid"></div>
         `;
         const grid = section.querySelector('.matches-grid');
 
         dayMatches.forEach(match => {
           const matchDate = match.datetime;
-          const formatted = matchDate
-            ? matchDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-            : '??:??';
+          const formatted = match.dateTbd
+            ? '🗓 Tarih açıklanmadı'
+            : matchDate
+              ? matchDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+              : '??:??';
           const open = canPredict(matchDate);
           const hasResult = match.homeScore != null && match.awayScore != null;
           const myPred = userPreds[match.id];
@@ -1346,24 +1453,30 @@
           }
 
           // Horizontal (side-by-side) teams row builder
-          const teamsRow = (homeCell, awayCell) => `
+          const teamsRow = (homeCell, awayCell, caption = '') => `
             <div class="match-teams-row">
               <div class="team-side team-side-home">
-                <span class="team-name-text">${escapeHTML(match.homeTeam)}</span>
+                ${teamNameSpan(match.homeTeam)}
+                ${teamMark(match.homeTeam)}
               </div>
               <div class="score-center">
-                ${homeCell}
-                <span class="score-sep">-</span>
-                ${awayCell}
+                <div class="score-row">
+                  ${homeCell}
+                  <span class="score-sep">:</span>
+                  ${awayCell}
+                </div>
+                ${caption ? `<span class="score-caption">${caption}</span>` : ''}
               </div>
               <div class="team-side team-side-away">
-                <span class="team-name-text">${escapeHTML(match.awayTeam)}</span>
+                ${teamMark(match.awayTeam)}
+                ${teamNameSpan(match.awayTeam)}
               </div>
             </div>
           `;
 
           let teamsHTML = '';
-          let predictionHTML = '';
+          let actionHTML = '';
+          let oddsHTML = '';
 
           if (hasResult) {
             const pts = myPred ? autoPointsFor(myPred, match) : null;
@@ -1371,10 +1484,11 @@
 
             teamsHTML = teamsRow(
               `<div class="actual-score-badge">${match.homeScore}</div>`,
-              `<div class="actual-score-badge">${match.awayScore}</div>`
+              `<div class="actual-score-badge">${match.awayScore}</div>`,
+              'Maç Sonucu'
             );
 
-            predictionHTML = `
+            actionHTML = `
               <div class="result-banner-completed">
                 <div class="locked-label">
                   <span class="locked-eyebrow">MAÇ SONUCU</span>
@@ -1392,17 +1506,19 @@
 
             teamsHTML = teamsRow(
               `<div class="actual-score-badge pred-highlight">${myPred.homePred}</div>`,
-              `<div class="actual-score-badge pred-highlight">${myPred.awayPred}</div>`
+              `<div class="actual-score-badge pred-highlight">${myPred.awayPred}</div>`,
+              'Senin Tahminin'
             );
 
-            predictionHTML = `
-              ${msOddsStrip(match)}
+            oddsHTML = msOddsStrip(match);
+            actionHTML = `
               <div class="prediction-locked-banner">
+                <span class="lock-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="11" rx="2.5" stroke="#E6B24A" stroke-width="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="#E6B24A" stroke-width="2"></path></svg></span>
                 <div class="locked-label">
                   <span class="locked-eyebrow">TAHMİNİN KİLİTLENDİ</span>
-                  <span class="locked-subtitle">${myOdd ? `Tahmininin iddaa oranı: ${formatScoreOdd(match, myOdd)}` : 'Tahminler sonradan değiştirilemez'}</span>
+                  <span class="locked-subtitle">${myOdd ? 'Bu skorun iddaa oranı' : 'Tahminler sonradan değiştirilemez'}</span>
                 </div>
-                <span class="lock-icon">🔒</span>
+                ${myOdd ? `<span class="locked-odd">${formatScoreOdd(match, myOdd)}</span>` : ''}
               </div>
             `;
           } else if (open) {
@@ -1411,8 +1527,8 @@
               `<input id="pred-a-${match.id}" type="number" inputmode="numeric" min="0" max="20" placeholder="0" class="score-number-input" oninput="updateOddsHint('${match.id}')">`
             );
 
-            predictionHTML = `
-              ${msOddsStrip(match)}
+            oddsHTML = msOddsStrip(match);
+            actionHTML = `
               <div class="odds-hint" id="odds-hint-${match.id}"></div>
               <button onclick="submitPrediction('${match.id}')" class="btn-lock">
                 TAHMİNİ KİLİTLE 🔒
@@ -1424,7 +1540,7 @@
               `<div class="actual-score-badge text-muted">-</div>`
             );
 
-            predictionHTML = `
+            actionHTML = `
               <div class="prediction-locked-banner closed">
                 <div class="locked-label">
                   <span class="locked-eyebrow">SÜRE DOLDU</span>
@@ -1444,22 +1560,27 @@
           const card = document.createElement('article');
           card.className = 'match-card';
           card.innerHTML = `
-            <div>
+            <div class="match-card-main">
               <div class="match-header">
-                <div class="match-time">${formatted}</div>
                 <div class="match-status-badge ${statusClass}">${statusBadgeText}</div>
+                <div class="match-time">${formatted}</div>
+                ${match.postponed ? `<div class="match-status-badge status-closed">Ertelendi</div>` : ''}
+                ${match.week && !match.dateTbd ? `<div class="match-week-pill">${match.week}. Hafta</div>` : ''}
+                <div class="match-tournament-label">${tournamentBadge(match)}</div>
               </div>
 
               <div class="match-teams-container">
-                <div class="match-tournament-label">${tournamentBadge(match)}</div>
                 ${teamsHTML}
+              </div>
+              <div class="match-card-bottom">
+                ${actionHTML}
               </div>
             </div>
 
-            <div class="prediction-section">
-              ${predictionHTML}
-              <div style="margin-top: 0.5rem;">
-                <div class="friend-picks-title">Arkadaş Tahminleri</div>
+            <div class="prediction-section match-card-panel">
+              ${oddsHTML}
+              <div class="friends-panel">
+                <div class="friend-picks-title">Arkadaş Tahminleri<span class="friend-picks-count">${getPredictionsForMatch(match.id).length}</span></div>
                 ${friendsBlock}
               </div>
             </div>
@@ -1525,15 +1646,19 @@
           const teamsHTML = `
             <div class="match-teams-row">
               <div class="team-side team-side-home">
-                <span class="team-name-text">${escapeHTML(match.homeTeam)}</span>
+                ${teamNameSpan(match.homeTeam)}
+                ${teamMark(match.homeTeam)}
               </div>
               <div class="score-center">
-                <div class="actual-score-badge text-muted">?</div>
-                <span class="score-sep">-</span>
-                <div class="actual-score-badge text-muted">?</div>
+                <div class="score-row">
+                  <div class="actual-score-badge text-muted">?</div>
+                  <span class="score-sep">:</span>
+                  <div class="actual-score-badge text-muted">?</div>
+                </div>
               </div>
               <div class="team-side team-side-away">
-                <span class="team-name-text">${escapeHTML(match.awayTeam)}</span>
+                ${teamMark(match.awayTeam)}
+                ${teamNameSpan(match.awayTeam)}
               </div>
             </div>
           `;
@@ -1541,18 +1666,18 @@
           const card = document.createElement('article');
           card.className = 'match-card';
           card.innerHTML = `
-            <div>
+            <div class="match-card-main">
               <div class="match-header">
-                <div class="match-time">${formatted}</div>
                 <div class="match-status-badge status-closed">Skor Bekleniyor</div>
+                <div class="match-time">${formatted}</div>
+                <div class="match-tournament-label">${tournamentBadge(match)}</div>
               </div>
               <div class="match-teams-container">
-                <div class="match-tournament-label">${tournamentBadge(match)}</div>
                 ${teamsHTML}
               </div>
             </div>
-            <div class="prediction-section">
-              <div style="margin-top: 0.5rem;">
+            <div class="prediction-section match-card-panel">
+              <div class="friends-panel">
                 <div class="friend-picks-title">Yapılan Tahminler</div>
                 ${renderFriendsPicks(match.id, false)}
               </div>
@@ -1592,9 +1717,12 @@
         const open = canPredict(match.datetime);
         const iPredicted = currentUser && allPredictions.some(p => p.uid === currentUser.uid && p.matchId === match.id);
         const canSeeFriends = iPredicted || hasResult || !open;
+        const statusText = hasResult ? 'Tamamlandı' : open ? 'Tahmine Açık' : 'Süre Doldu';
+        const statusClass = hasResult ? 'status-completed' : open ? 'status-open' : 'status-closed';
         return `
           <div class="prediction-match-row">
             <div class="prediction-match-header">
+              <span class="match-status-badge ${statusClass}">${statusText}</span>
               <div>
                 <span class="prediction-match-date">${escapeHTML(formatted)}</span>
                 <div style="margin-top: 4px;">${tournamentBadge(match)}</div>
@@ -1618,25 +1746,52 @@
     function archiveRowHTML(match, count, picksHTML) {
       const formatted = formatMatchTime(match.datetime);
       const hasResult = match.homeScore != null && match.awayScore != null;
-      const scoreHTML = hasResult
-        ? `<span class="archive-score">${match.homeScore} - ${match.awayScore}</span>`
-        : `<span class="archive-score pending">— : —</span>`;
+
+      const homeCell = hasResult
+        ? `<div class="actual-score-badge">${match.homeScore}</div>`
+        : `<div class="actual-score-badge text-muted">-</div>`;
+      const awayCell = hasResult
+        ? `<div class="actual-score-badge">${match.awayScore}</div>`
+        : `<div class="actual-score-badge text-muted">-</div>`;
+
       return `
-        <div class="prediction-match-row">
-          <div class="prediction-match-header">
-            <div>
-              <span class="prediction-match-date">${escapeHTML(formatted)}</span>
-              <div style="margin-top: 4px;">${tournamentBadge(match)}</div>
-              <h4 class="match-teams-title" style="margin-top: 4px;">
-                ${escapeHTML(match.homeTeam)}
-                ${scoreHTML}
-                ${escapeHTML(match.awayTeam)}
-              </h4>
+        <article class="match-card archive-card">
+          <div class="match-card-main">
+            <div class="match-header">
+              <div class="match-status-badge status-completed">${hasResult ? 'Tamamlandı' : 'Sonuç Bekleniyor'}</div>
+              <div class="match-time">${escapeHTML(formatted)}</div>
+              ${match.week ? `<div class="match-week-pill">${match.week}. Hafta</div>` : ''}
+              <div class="match-tournament-label">${tournamentBadge(match)}</div>
             </div>
-            <span class="badge-count" style="margin-left: 0;">${count} tahmin</span>
+
+            <div class="match-teams-container">
+              <div class="match-teams-row">
+                <div class="team-side team-side-home">
+                  ${teamNameSpan(match.homeTeam)}
+                  ${teamMark(match.homeTeam)}
+                </div>
+                <div class="score-center">
+                  <div class="score-row">
+                    ${homeCell}
+                    <span class="score-sep">:</span>
+                    ${awayCell}
+                  </div>
+                  <span class="score-caption">${hasResult ? 'Maç Sonucu' : ''}</span>
+                </div>
+                <div class="team-side team-side-away">
+                  ${teamMark(match.awayTeam)}
+                  ${teamNameSpan(match.awayTeam)}
+                </div>
+              </div>
+            </div>
           </div>
-          ${picksHTML}
-        </div>
+
+          <div class="prediction-section match-card-panel">
+            <div class="friends-panel">
+              ${picksHTML}
+            </div>
+          </div>
+        </article>
       `;
     }
 
@@ -1651,6 +1806,7 @@
         const odd = scoreOddFor(match, s.h, s.a);
         return `
           <span class="friend-pick-badge ${cls}">
+            <span class="friend-avatar" aria-hidden="true">${escapeHTML(String(s.name || '?').trim().charAt(0).toLocaleUpperCase('tr-TR'))}</span>
             <span>${escapeHTML(s.name)}</span>
             <strong>${s.h}-${s.a}</strong>
             ${odd ? `<em class="pick-odd">${formatScoreOdd(match, odd)}</em>` : ''}
@@ -1790,17 +1946,89 @@
       }
     }
 
+    // ---- Hafta görünümü (arşiv) ----
+    // Haftası girilmiş maçlar için "N. Hafta" chip'leri; kaynak olarak yeni sorgu
+    // yerine cihazdaki tam arşiv önbelleği (breakdownArchiveDocs) + yüklü sayfalar
+    // kullanılır — ekstra Firestore okuması ve composite index gerekmez.
+    function archiveWeekSourceDocs() {
+      if (!optimizedMode) return matches.filter(isPastMatch);
+      const seen = new Map();
+      (breakdownArchiveDocs || []).forEach(m => seen.set(m.id, m));
+      archiveDocs.forEach(m => { if (!seen.has(m.id)) seen.set(m.id, m); });
+      return Array.from(seen.values());
+    }
+
+    function renderArchiveWeekFilter() {
+      const container = document.getElementById('archive-week-filter');
+      if (!container) return;
+
+      const inTournament = archiveWeekSourceDocs().filter(m =>
+        archiveTournamentFilter === ALL_TOURNAMENTS || tournamentOf(m) === archiveTournamentFilter);
+      const weeks = Array.from(new Set(
+        inTournament.map(m => m.week).filter(w => w != null)
+      )).sort((a, b) => a - b);
+
+      if (!weeks.length) {
+        container.innerHTML = '';
+        container.classList.add('hidden');
+        archiveWeekFilter = null;
+        return;
+      }
+
+      container.classList.remove('hidden');
+      let html = `<button type="button" class="tournament-tab ${archiveWeekFilter == null ? 'active' : ''}" onclick="selectArchiveWeek(null)">📅 Tarihe Göre</button>`;
+      weeks.forEach(w => {
+        html += `<button type="button" class="tournament-tab ${archiveWeekFilter === w ? 'active' : ''}" onclick="selectArchiveWeek(${w})">${w}. Hafta</button>`;
+      });
+      container.innerHTML = html;
+    }
+
+    function selectArchiveWeek(week) {
+      if (archiveWeekFilter === week) return;
+      archiveWeekFilter = week;
+      renderArchive();
+    }
+
+    function renderArchiveWeekView(container, countEl) {
+      const docs = archiveWeekSourceDocs()
+        .filter(m => m.week === archiveWeekFilter)
+        .filter(m => archiveTournamentFilter === ALL_TOURNAMENTS || tournamentOf(m) === archiveTournamentFilter)
+        .sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
+
+      if (countEl) countEl.textContent = `${archiveWeekFilter}. Hafta • ${docs.length} maç`;
+
+      if (!docs.length) {
+        container.innerHTML = breakdownArchiveLoading || formArchiveEnsureStarted
+          ? `<div class="empty-badge">Yükleniyor…</div>`
+          : `<div class="empty-badge">Bu haftada arşivlenmiş maç yok.</div>`;
+        return;
+      }
+
+      container.innerHTML = docs.map(m => {
+        const sb = Array.isArray(m.scoreboard) ? m.scoreboard : [];
+        const picksHTML = sb.length ? renderScoreboardPicks(sb, m) : renderFriendsPicks(m.id);
+        const count = sb.length || getPredictionsForMatch(m.id).length;
+        return archiveRowHTML(m, count, picksHTML);
+      }).join('');
+    }
+
     function renderArchive() {
       // Güvenli varsayılan
       if (!archiveTournamentFilter) archiveTournamentFilter = defaultTournament || DEFAULT_TOURNAMENT;
 
       renderArchiveTournamentTabs();
+      renderArchiveWeekFilter();
 
       const container = document.getElementById('archive-list');
       const countEl = document.getElementById('archive-count');
       if (!container) return;
 
       const matchesFilter = (m) => archiveTournamentFilter === ALL_TOURNAMENTS || tournamentOf(m) === archiveTournamentFilter;
+
+      if (archiveWeekFilter != null) {
+        renderArchiveWeekView(container, countEl);
+        return;
+      }
 
       if (optimizedMode) {
         if (!archiveUsesDayIndex) rebuildArchiveDayGroups(archiveDocs);
@@ -2125,7 +2353,7 @@
     function formDotsHTML(historyNewestFirst) {
       // Display oldest → newest (left to right), last FORM_LENGTH picks
       const slice = historyNewestFirst.slice(0, FORM_LENGTH).reverse();
-      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '✕' };
       const titles = {
         exact: 'Tam skor',
         approx: 'Yaklaşma',
@@ -2185,7 +2413,7 @@
       const dateEl = document.getElementById('formdot-pop-date');
       const detailEl = document.getElementById('formdot-pop-detail');
 
-      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+      const labels = { exact: 'S', approx: 'Y', outcome: '1', miss: '✕' };
       kindEl.innerHTML = `<span class="form-dot ${info.kind}">${labels[info.kind] || '?'}</span> ${escapeHTML(info.kindLabel)}`;
       teamsEl.textContent = info.teams;
       dateEl.textContent = info.date;
@@ -2291,7 +2519,7 @@
       blocked: { icon: '🚫', label: 'Bloke' },
       bonus:   { icon: '🔥', label: 'Bonus' }
     };
-    const analysisKindLabels = { exact: 'S', approx: 'Y', outcome: '1', miss: '×' };
+    const analysisKindLabels = { exact: 'S', approx: 'Y', outcome: '1', miss: '✕' };
 
     let analysisPopCleanup = null;
     function showAnalysisTileMatches(tileEl, regIdx, category) {
@@ -2873,23 +3101,29 @@
     // Sonuç girildikçe aggregate listener'ı bunu tetikler: maç başına ~1 okuma.
     async function syncArchiveDelta() {
       if (!optimizedMode || !Array.isArray(breakdownArchiveDocs)) return;
-      if (archiveDeltaSyncing) return;
+      // Senkron zaten sürüyorsa kaybolmasın: bittiğinde bir tur daha atılır.
+      // (Aggregate listener'ı local yazmayla, batch sunucuya ulaşmadan tetiklenebilir;
+      // commit sonrası çağrı kuyruğa alınmazsa son maç önbelleğe hiç girmez.)
+      if (archiveDeltaSyncing) { archiveDeltaQueued = true; return; }
       archiveDeltaSyncing = true;
       try {
-        const snap = await db.collection('matches')
-          .where('finalized', '==', true)
-          .where('finalizedAt', '>', firebase.firestore.Timestamp.fromMillis(breakdownArchiveMaxFAms || 0))
-          .get();
-        if (!snap.empty) {
-          const byId = Object.fromEntries(breakdownArchiveDocs.map(m => [m.id, m]));
-          snap.docs.forEach(d => { byId[d.id] = mapMatchDoc(d); });
-          breakdownArchiveDocs = Object.values(byId);
-          breakdownArchiveMaxFAms = breakdownArchiveDocs.reduce(
-            (mx, m) => Math.max(mx, matchFinalizedAtMs(m)), breakdownArchiveMaxFAms || 0);
-          saveArchiveCache();
-          if (currentView === 'leaderboard') renderLeaderboard();
-          if (breakdownUid) renderBreakdownBody();
-        }
+        do {
+          archiveDeltaQueued = false;
+          const snap = await db.collection('matches')
+            .where('finalized', '==', true)
+            .where('finalizedAt', '>', firebase.firestore.Timestamp.fromMillis(breakdownArchiveMaxFAms || 0))
+            .get();
+          if (!snap.empty) {
+            const byId = Object.fromEntries(breakdownArchiveDocs.map(m => [m.id, m]));
+            snap.docs.forEach(d => { byId[d.id] = mapMatchDoc(d); });
+            breakdownArchiveDocs = Object.values(byId);
+            breakdownArchiveMaxFAms = breakdownArchiveDocs.reduce(
+              (mx, m) => Math.max(mx, matchFinalizedAtMs(m)), breakdownArchiveMaxFAms || 0);
+            saveArchiveCache();
+            if (currentView === 'leaderboard') renderLeaderboard();
+            if (breakdownUid) renderBreakdownBody();
+          }
+        } while (archiveDeltaQueued);
       } catch (e) {
         console.warn('Arşiv delta senkronu başarısız:', e);
       } finally {
@@ -3161,7 +3395,8 @@
         collapsed = false,        // true → tüm gün grupları kapalı başlar
         dayLimit = Infinity,      // gösterilecek azami gün (grup) sayısı
         onLoadMore = null,        // limit aşıldığında "Daha Fazla Yükle" butonunun callback'i
-        loadMoreStep = 5
+        loadMoreStep = 5,
+        groupByTournament = false // true → üst seviye turnuva etiketi, altında hafta/gün grupları
       } = options;
       container.innerHTML = '';
       if (!entries.length) {
@@ -3169,10 +3404,42 @@
         return;
       }
 
+      if (groupByTournament) {
+        const byTournament = new Map();
+        entries.forEach(entry => {
+          const t = tournamentOf(entry.match);
+          if (!byTournament.has(t)) byTournament.set(t, []);
+          byTournament.get(t).push(entry);
+        });
+
+        const earliest = list => Math.min(...list.map(e => e.match.datetime?.getTime() || Infinity));
+        const list = document.createElement('div');
+        list.className = 'admin-day-list';
+        Array.from(byTournament.entries())
+          .sort((a, b) => earliest(a[1]) - earliest(b[1]))
+          .forEach(([tournament, tEntries], idx) => {
+            const missing = tEntries.reduce((sum, item) => sum + (item.missingCount || 0), 0);
+            const meta = `
+              <span class="admin-mini-pill">${tEntries.length} mac</span>
+              ${missing ? `<span class="admin-mini-pill warn">${missing} eksik tahmin</span>` : `<span class="admin-mini-pill">tamam</span>`}
+            `;
+            const outer = createAdminDayGroup(`🏆 ${tournament}`, meta, idx === 0);
+            const body = outer.querySelector('.admin-day-body');
+            appendAdminDayGroups(body, tEntries, { ...options, groupByTournament: false });
+            list.appendChild(outer);
+          });
+        container.appendChild(list);
+        return;
+      }
+
       const groups = new Map();
       entries.forEach(entry => {
         const match = entry.match;
-        const key = getDayKey(match.datetime);
+        // Haftası girilmiş maçlar hafta başlığı altında toplanır (turnuva bazında),
+        // haftasızlar bugünkü gibi güne göre gruplanır.
+        const key = match.week != null
+          ? `w|${tournamentOf(match)}|${match.week}`
+          : getDayKey(match.datetime);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(entry);
       });
@@ -3189,7 +3456,10 @@
       list.className = 'admin-day-list';
       visibleGroups.forEach((dayEntries, idx) => {
         dayEntries.sort((a, b) => (a.match.datetime?.getTime() || 0) - (b.match.datetime?.getTime() || 0));
-        const title = formatDayHeading(dayEntries[0].match.datetime);
+        const firstMatch = dayEntries[0].match;
+        const title = firstMatch.week != null
+          ? `${firstMatch.week}. Hafta${firstMatch.dateTbd ? ' — tarih bekleniyor' : ` — ${formatDayHeading(firstMatch.datetime)}`}`
+          : formatDayHeading(firstMatch.datetime);
         const missing = dayEntries.reduce((sum, item) => sum + (item.missingCount || 0), 0);
         const meta = `
           <span class="admin-mini-pill">${dayEntries.length} mac</span>
@@ -3234,9 +3504,7 @@
     function buildAdminMatchItem(match, picks) {
       const formatted = formatMatchTime(match.datetime);
       const hasResult = match.homeScore != null && match.awayScore != null;
-      const dateAttr = match.datetime
-        ? `${String(match.datetime.getDate()).padStart(2, '0')}.${String(match.datetime.getMonth() + 1).padStart(2, '0')}`
-        : '';
+      const dateAttr = formatDateInput(match.datetime);
       const timeAttr = match.datetime
         ? `${String(match.datetime.getHours()).padStart(2, '0')}:${String(match.datetime.getMinutes()).padStart(2, '0')}`
         : '';
@@ -3308,6 +3576,8 @@
             <div class="admin-match-sub">
               <span class="admin-match-date">${formatted}</span>
               ${tournamentBadge(match)}
+              ${match.week ? `<span class="admin-mini-pill">${match.week}. Hafta</span>` : ''}
+              ${match.postponed ? `<span class="admin-mini-pill warn">Ertelendi</span>` : (match.dateTbd ? `<span class="admin-mini-pill warn">tarih onay bekliyor</span>` : '')}
               ${hasResult ? `<span class="admin-mini-pill">sonuç girildi</span>` : ''}
               ${missingCount ? `<span class="admin-mini-pill warn">${missingCount} eksik tahmin</span>` : `<span class="admin-mini-pill">tahminler tam</span>`}
             </div>
@@ -3321,12 +3591,17 @@
             <div class="admin-group-fields">
               <div class="admin-mini-field">
                 <label>Tarih</label>
-                <input id="res-date-${match.id}" type="text" value="${dateAttr}" placeholder="GG.AA" class="score-number-input date-field" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
+                <input id="res-date-${match.id}" type="text" value="${dateAttr}" placeholder="GG.AA.YYYY" class="score-number-input date-field" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
               </div>
               <div class="admin-mini-field">
                 <label>Saat</label>
                 <input id="res-time-${match.id}" type="text" value="${timeAttr}" placeholder="SS:dd" class="score-number-input time-field" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
               </div>
+              <div class="admin-mini-field">
+                <label>Hafta</label>
+                <input id="res-week-${match.id}" type="number" min="1" max="60" value="${match.week || ''}" placeholder="—" class="score-number-input" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
+              </div>
+              ${!hasResult ? `<button onclick="postponeMatch('${match.id}')" class="btn btn-sm btn-secondary" title="Tarihi belirsize al (yeni tarih Nesine'den önerilir)">⏸ Ertele</button>` : ''}
             </div>
           </div>
 
@@ -3515,7 +3790,7 @@
         };
       });
 
-      appendAdminDayGroups(container, entries, { collapsed: true });
+      appendAdminDayGroups(container, entries, { collapsed: true, groupByTournament: true });
       const footer = document.createElement('div');
       footer.style.textAlign = 'center';
       footer.style.marginTop = '1rem';
@@ -3602,6 +3877,275 @@
       } finally {
         btn.disabled = false;
         btn.textContent = '🔄 Oranları Şimdi Kontrol Et';
+      }
+    }
+
+    // Nesine bülteninde takım adı arar (nesineHealthCheck?grep=...). Maç "bulunamadı"
+    // görünüyorsa sunucunun gördüğü bültende olup olmadığını buradan teşhis ederiz.
+    const NESINE_SPORT_NAMES = { 1: 'Futbol', 2: 'Basketbol', 5: 'Tenis', 6: 'Voleybol', 23: 'Hentbol' };
+    async function searchNesineBulletin() {
+      if (!isAdmin) return;
+      const input = document.getElementById('bulletin-search-input');
+      const btn = document.getElementById('bulletin-search-btn');
+      const resultBox = document.getElementById('bulletin-search-result');
+      const query = (input.value || '').trim();
+      if (!query) { input.focus(); return; }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Aranıyor…';
+      resultBox.innerHTML = '';
+      try {
+        const res = await fetch('https://europe-west1-aefy-lig.cloudfunctions.net/nesineHealthCheck?grep=' + encodeURIComponent(query));
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Bilinmeyen hata');
+
+        const hits = data.hits || [];
+        if (!hits.length) {
+          resultBox.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted);">"${escapeHTML(query)}" için bültende maç bulunamadı. Bülten bayat olabilir — birkaç dakika sonra tekrar dene.</div>`;
+          return;
+        }
+        const rows = hits.map(h => {
+          const sport = NESINE_SPORT_NAMES[h.GT] || `Spor #${h.GT}`;
+          const sportStyle = h.GT === 1 ? '' : ' color:var(--text-muted);';
+          const marketNote = h.markets ? `${h.markets} market` : 'oran açılmamış';
+          return `<div style="font-size:0.78rem; padding:3px 0;${sportStyle}">
+              ${h.GT === 1 ? '⚽' : '▪️'} <strong>${escapeHTML(h.HN)} - ${escapeHTML(h.AN)}</strong>
+              <span style="color:var(--text-muted);">— ${escapeHTML(h.D)} ${escapeHTML(h.T)} • ${sport} • ${marketNote}</span>
+            </div>`;
+        }).join('');
+        resultBox.innerHTML =
+          `<div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Bültende ${data.footballEventCount} futbol maçı tarandı, ${hits.length} eşleşme:</div>` + rows;
+      } catch (err) {
+        showToast('Bülten araması başarısız: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Bültende Ara';
+      }
+    }
+
+    // ================== TARİH ÖNERİLERİ (hafta bazlı / dateTbd maçlar) ==================
+    // dateTbd:true maçların gerçek tarihleri Cloud Function tarafından Nesine'den
+    // bulunup proposedDatetime alanına yazılır; buradaki liste admin onayı içindir.
+    let dateProposalDocs = [];
+    const DATE_PROPOSAL_NO_PROPOSAL_LIMIT = 12;
+
+    function proposalDateOf(match) {
+      const raw = match.proposedDatetime;
+      if (!raw) return null;
+      return raw.toDate ? raw.toDate() : new Date(raw);
+    }
+
+    async function loadDateProposals() {
+      if (!isAdmin) return;
+      const container = document.getElementById('date-proposals-list');
+      if (!container) return;
+      try {
+        const snap = await db.collection('matches').where('dateTbd', '==', true).get();
+        dateProposalDocs = snap.docs.map(mapMatchDoc)
+          .filter(m => !m.finalized)
+          .sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div class="empty-badge">Tarih önerileri yüklenemedi.</div>`;
+        return;
+      }
+      renderDateProposals();
+    }
+
+    function formatProposalDate(date) {
+      if (!date) return '—';
+      return date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'short' })
+        + ' ' + date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderDateProposals() {
+      const container = document.getElementById('date-proposals-list');
+      if (!container) return;
+
+      if (!dateProposalDocs.length) {
+        container.innerHTML = `<div class="empty-badge">Tarih onayı bekleyen maç yok.</div>`;
+        return;
+      }
+
+      const pending = dateProposalDocs.filter(m => m.proposalStatus === 'pending');
+      const others = dateProposalDocs.filter(m => m.proposalStatus !== 'pending');
+      const nowMs = Date.now();
+
+      const row = (m) => {
+        const proposal = proposalDateOf(m);
+        const isPending = m.proposalStatus === 'pending';
+        const urgent = !isPending && m.datetime && (m.datetime.getTime() - nowMs) < 48 * 60 * 60 * 1000;
+        const weekPill = m.week ? `<span class="admin-mini-pill">${m.week}. Hafta</span>` : '';
+        const postponedPill = m.postponed ? `<span class="admin-mini-pill warn">Ertelendi</span>` : '';
+        const statusHTML = isPending
+          ? `<span class="proposal-new-date">→ ${escapeHTML(formatProposalDate(proposal))}</span>
+             <button onclick="approveProposal('${m.id}')" class="btn btn-sm btn-primary">Onayla</button>
+             <button onclick="rejectProposal('${m.id}')" class="btn btn-sm btn-secondary">Reddet</button>`
+          : (m.proposalStatus === 'rejected'
+            ? `<span class="admin-mini-pill">öneri reddedildi</span>`
+            : `<span class="admin-mini-pill${urgent ? ' warn' : ''}">${urgent ? 'yer tutucu yaklaşıyor — bültende yok' : 'Nesine bülteninde henüz yok'}</span>`);
+        return `
+          <div class="date-proposal-row${isPending ? ' pending' : ''}">
+            <div class="date-proposal-info">
+              <span class="pending-teams">
+                <span class="t-home">${escapeHTML(m.homeTeam)}</span>
+                <span class="t-vs">—</span>
+                <span class="t-away">${escapeHTML(m.awayTeam)}</span>
+              </span>
+              ${weekPill}${postponedPill}
+              <span class="proposal-placeholder" title="Yer tutucu tarih">${escapeHTML(formatProposalDate(m.datetime))}</span>
+            </div>
+            <div class="date-proposal-actions">${statusHTML}</div>
+          </div>
+        `;
+      };
+
+      const othersShown = others.slice(0, DATE_PROPOSAL_NO_PROPOSAL_LIMIT);
+      const approveAll = pending.length > 1
+        ? `<div style="margin-bottom:0.5rem;"><button onclick="approveAllProposals()" class="btn btn-sm btn-primary">✓ Tümünü Onayla (${pending.length})</button></div>`
+        : '';
+      const rest = others.length > othersShown.length
+        ? `<div class="empty-badge" style="margin-top:0.4rem;">+ ${others.length - othersShown.length} maç daha tarih bekliyor (en yakınlar gösteriliyor).</div>`
+        : '';
+
+      container.innerHTML = `
+        ${approveAll}
+        ${pending.map(row).join('')}
+        ${othersShown.map(row).join('')}
+        ${rest}
+      `;
+    }
+
+    async function approveProposal(matchId) {
+      const m = dateProposalDocs.find(d => d.id === matchId);
+      const proposal = m && proposalDateOf(m);
+      if (!proposal) { showToast('Önerilen tarih bulunamadı.', 'error'); return; }
+      try {
+        await db.collection('matches').doc(matchId).update({
+          datetime: firebase.firestore.Timestamp.fromDate(proposal),
+          dateTbd: firebase.firestore.FieldValue.delete(),
+          postponed: firebase.firestore.FieldValue.delete(),
+          proposedDatetime: firebase.firestore.FieldValue.delete(),
+          proposalStatus: firebase.firestore.FieldValue.delete(),
+          proposalSource: firebase.firestore.FieldValue.delete(),
+          proposalCheckedAt: firebase.firestore.FieldValue.delete()
+        });
+        resetFutureFixturePaging();
+        showToast('Tarih onaylandı.', 'success');
+        loadDateProposals();
+      } catch (e) {
+        console.error(e);
+        showToast('Tarih onaylanamadı.', 'error');
+      }
+    }
+
+    async function approveAllProposals() {
+      const pending = dateProposalDocs.filter(m => m.proposalStatus === 'pending' && proposalDateOf(m));
+      if (!pending.length) return;
+      if (!confirm(`${pending.length} maçın önerilen tarihi onaylanacak. Emin misin?`)) return;
+      try {
+        const batch = db.batch();
+        pending.forEach(m => {
+          batch.update(db.collection('matches').doc(m.id), {
+            datetime: firebase.firestore.Timestamp.fromDate(proposalDateOf(m)),
+            dateTbd: firebase.firestore.FieldValue.delete(),
+            postponed: firebase.firestore.FieldValue.delete(),
+            proposedDatetime: firebase.firestore.FieldValue.delete(),
+            proposalStatus: firebase.firestore.FieldValue.delete(),
+            proposalSource: firebase.firestore.FieldValue.delete(),
+            proposalCheckedAt: firebase.firestore.FieldValue.delete()
+          });
+        });
+        await batch.commit();
+        resetFutureFixturePaging();
+        showToast(`${pending.length} maçın tarihi onaylandı.`, 'success');
+        loadDateProposals();
+      } catch (e) {
+        console.error(e);
+        showToast('Toplu onay başarısız.', 'error');
+      }
+    }
+
+    async function rejectProposal(matchId) {
+      try {
+        // proposedDatetime silinmez: senkron aynı tarihi tekrar önermesin diye saklanır.
+        await db.collection('matches').doc(matchId).update({ proposalStatus: 'rejected' });
+        showToast('Öneri reddedildi. Yeni/farklı tarih bulunursa tekrar önerilecek.', 'success');
+        loadDateProposals();
+      } catch (e) {
+        console.error(e);
+        showToast('İşlem başarısız.', 'error');
+      }
+    }
+
+    async function requestFixtureDateSync() {
+      if (!isAdmin) return;
+      const btn = document.getElementById('date-sync-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Nesine bülteni taranıyor…'; }
+      try {
+        const res = await fetch('https://europe-west1-aefy-lig.cloudfunctions.net/fixtureDateSyncNow');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Bilinmeyen hata');
+        if (!data.checked) {
+          showToast('Tarih bekleyen maç yok (önümüzdeki 10 gün penceresinde).', 'success');
+        } else if (data.proposed) {
+          showToast(`${data.proposed} maç için tarih bulundu — aşağıdan onaylayabilirsin.`, 'success');
+        } else {
+          showToast(`Tarih bulunamadı; ${data.unmatched} maç henüz Nesine bülteninde yok.`, 'warning');
+        }
+        loadDateProposals();
+      } catch (err) {
+        showToast('Tarih kontrolü başarısız: ' + (err.message || err), 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "🔄 Nesine'den Tarihleri Çek"; }
+      }
+    }
+
+    // Bekleyen maçların skorlarını Nesine canlı skor servisinden hemen tarat
+    // (autoFetchScores'un manuel tetiklenmesi).
+    async function checkPendingScoresNow() {
+      if (!isAdmin) return;
+      const btn = document.getElementById('score-check-btn');
+      const resultBox = document.getElementById('score-check-result');
+      btn.disabled = true;
+      btn.textContent = '⏳ Skorlar taranıyor…';
+      resultBox.innerHTML = '';
+      try {
+        const res = await fetch('https://europe-west1-aefy-lig.cloudfunctions.net/nesineHealthCheck?scores=1');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Bilinmeyen hata');
+
+        const rows = data.report || [];
+        const processed = rows.filter(r => r.result === 'finalized' || r.result === 'legacy_score');
+        const scoreOnly = rows.filter(r => r.result === 'score_only');
+
+        if (processed.length || scoreOnly.length) {
+          showToast(`${processed.length + scoreOnly.length} maçın skoru bulundu ve işlendi.`, 'success');
+        } else if (rows.length) {
+          showToast("Şu an Nesine'de biten maç skoru bulunamadı.", 'warning');
+        } else {
+          showToast('Skor bekleyen maç yok.', 'success');
+        }
+
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const noteOf = r => {
+          if (r.result === 'finalized' || r.result === 'legacy_score') return ['✅', `skor işlendi (${r.score})`];
+          if (r.result === 'score_only') return ['⚠️', `skor yazıldı (${r.score}) ama oran verisi eksik; puanları elle gir`];
+          if (r.result === 'not_finished') return ['⏳', 'maç henüz bitmedi'];
+          if (r.result === 'not_in_feed') return ['❓', 'Nesine skor servisinde bulunamadı'];
+          if (r.result === 'no_event_code') return ['❓', 'maçın Nesine oran kaydı yok'];
+          return ['❌', String(r.result)];
+        };
+        resultBox.innerHTML = rows.map(r => {
+          const [icon, note] = noteOf(r);
+          return `<div style="font-size:0.78rem; padding:2px 0;">${icon} ${esc(r.match)} <span style="color:var(--text-muted);">— ${esc(note)}</span></div>`;
+        }).join('') ||
+          '<div style="font-size:0.78rem; color:var(--text-muted);">Skoru bekleyen maç yok.</div>';
+      } catch (err) {
+        showToast('Skor kontrolü başarısız: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Skorları Şimdi Kontrol Et';
       }
     }
 
@@ -3851,8 +4395,16 @@
         scoreboard,
         finalizedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
-      if (payload) batch.set(aggRef(), payload, { merge: true });
+      // Even when every prediction earns zero, notify all clients to refresh their
+      // form/analysis archive. The aggregate listener is the delta-sync trigger.
+      batch.set(aggRef(), {
+        ...(payload || {}),
+        archiveVersion: firebase.firestore.FieldValue.increment(1),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
       await batch.commit();
+      // Commit sonrası arşiv önbelleğine işle (erken tetiklenen delta bu maçı kaçırabilir).
+      syncArchiveDelta();
     }
 
     // Saves the actual result plus the two point values; scoring is then automatic.
@@ -3866,15 +4418,29 @@
       const nextDateTime = parseDateTime(dateRaw, timeRaw);
 
       if (!nextDateTime) {
-        showToast('Geçerli tarih ve saat girin (GG.AA / SS:dd).', 'error');
+        showToast('Geçerli tarih ve saat girin (GG.AA.YYYY / SS:dd).', 'error');
         return;
       }
 
+      const weekRaw = parseInt(document.getElementById(`res-week-${matchId}`)?.value || '', 10);
       const data = {
         datetime: firebase.firestore.Timestamp.fromDate(nextDateTime),
+        week: weekRaw >= 1 ? weekRaw : firebase.firestore.FieldValue.delete(),
         outcomePoints: isNaN(op) ? null : op,
         scorePoints: isNaN(sp) ? null : sp
       };
+
+      // TBD/ertelenmiş maçta admin tarihi elle değiştirdiyse tarih artık resmidir:
+      // yer tutucu bayrakları ve bekleyen öneri temizlenir.
+      const knownMatch = matches.find(m => m.id === matchId) || futureFixtureDocs.find(m => m.id === matchId);
+      if (knownMatch?.dateTbd && knownMatch.datetime && nextDateTime.getTime() !== knownMatch.datetime.getTime()) {
+        data.dateTbd = firebase.firestore.FieldValue.delete();
+        data.postponed = firebase.firestore.FieldValue.delete();
+        data.proposedDatetime = firebase.firestore.FieldValue.delete();
+        data.proposalStatus = firebase.firestore.FieldValue.delete();
+        data.proposalSource = firebase.firestore.FieldValue.delete();
+        data.proposalCheckedAt = firebase.firestore.FieldValue.delete();
+      }
 
       let hasResult = false;
       if (hRaw === '' && aRaw === '') {
@@ -3889,6 +4455,13 @@
         data.homeScore = h;
         data.awayScore = a;
         hasResult = true;
+        // Sonucu girilen maçın tarihi kesinleşmiştir; TBD bayrakları kalkar.
+        data.dateTbd = firebase.firestore.FieldValue.delete();
+        data.postponed = firebase.firestore.FieldValue.delete();
+        data.proposedDatetime = firebase.firestore.FieldValue.delete();
+        data.proposalStatus = firebase.firestore.FieldValue.delete();
+        data.proposalSource = firebase.firestore.FieldValue.delete();
+        data.proposalCheckedAt = firebase.firestore.FieldValue.delete();
       }
 
       try {
@@ -3949,16 +4522,54 @@
 
         const batch = db.batch();
         batch.update(matchRef, data);
-        if (payload) batch.set(aggRef(), payload, { merge: true });
+        // Always emit an archive change signal. A 0-point result still adds a form
+        // dot and analysis entry for every player who predicted the match.
+        batch.set(aggRef(), {
+          ...(payload || {}),
+          archiveVersion: firebase.firestore.FieldValue.increment(1),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
         await batch.commit();
         if (prev.finalized) await removeArchiveDayIndex({ id: matchId, ...prev });
         await upsertArchiveDayIndex(matchForCalc);
         resetArchivePaging();
         resetFutureFixturePaging();
+        // Commit tamamlandıktan sonra arşiv önbelleğini senkronla: aggregate
+        // listener'ı local yazmayla erken tetiklendiği için bu maçı kaçırmış
+        // olabilir. Böylece form grafiği / detaylı analiz hemen güncellenir.
+        syncArchiveDelta();
         showToast('Sonuç kaydedildi, maç arşive taşındı ve puanlar güncellendi.', 'success');
       } catch (e) {
         console.error(e);
         showToast('Kaydedilemedi.', 'error');
+      }
+    }
+
+    // Maçı "ertelendi"ye alır: tarih yer tutucuya (+7 gün) kayar, dateTbd işaretlenir;
+    // yeni tarih açıklanınca Nesine senkronu öneri üretir ve admin onaylar.
+    async function postponeMatch(matchId) {
+      const known = matches.find(m => m.id === matchId) || futureFixtureDocs.find(m => m.id === matchId);
+      const label = known ? `${known.homeTeam} - ${known.awayTeam}` : 'Bu maç';
+      if (!confirm(`${label} ertelensin mi?\nTarih yer tutucu olarak 1 hafta ileri alınır; gerçek tarih açıklanınca Nesine'den önerilir.`)) return;
+
+      const baseMs = Math.max(known?.datetime?.getTime() || Date.now(), Date.now());
+      const placeholder = new Date(baseMs + 7 * 24 * 60 * 60 * 1000);
+      try {
+        await db.collection('matches').doc(matchId).update({
+          datetime: firebase.firestore.Timestamp.fromDate(placeholder),
+          dateTbd: true,
+          postponed: true,
+          proposedDatetime: firebase.firestore.FieldValue.delete(),
+          proposalStatus: firebase.firestore.FieldValue.delete(),
+          proposalSource: firebase.firestore.FieldValue.delete(),
+          proposalCheckedAt: firebase.firestore.FieldValue.delete()
+        });
+        resetFutureFixturePaging();
+        loadDateProposals();
+        showToast('Maç ertelendi. Yeni tarih Nesine bülteninde bulununca Tarih Önerileri bölümüne düşecek.', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Maç ertelenemedi.', 'error');
       }
     }
 
@@ -3999,16 +4610,23 @@
 
     function addMatchToPending() {
       const dateStr = document.getElementById('add-date').value.trim();
+      const yearStr = document.getElementById('add-year').value.trim();
       const timeStr = document.getElementById('add-time').value.trim();
       const home = document.getElementById('add-home').value.trim();
       const away = document.getElementById('add-away').value.trim();
+      const dt = parseDateTime(dateStr, timeStr, yearStr);
 
-      if (!dateStr || !timeStr || !home || !away) {
-        showToast('Tüm alanları doldurun.', 'error');
+      if (!dt || !home || !away) {
+        showToast('Geçerli tarih, saat ve takım adları girin.', 'error');
         return;
       }
 
-      pendingMatches.push({ dateStr, timeStr, homeTeam: home, awayTeam: away, tournament: selectedTournament });
+      const weekNo = parseInt(document.getElementById('add-week')?.value || '', 10);
+      pendingMatches.push({
+        dateStr: formatDateInput(dt), timeStr, homeTeam: home, awayTeam: away,
+        tournament: selectedTournament,
+        ...(weekNo >= 1 ? { week: weekNo } : {})
+      });
       renderPendingMatches();
 
       document.getElementById('add-home').value = '';
@@ -4060,6 +4678,8 @@
               <span class="t-away">${escapeHTML(m.awayTeam)}</span>
             </span>
             <span class="tournament-badge tournament-badge-sm">${escapeHTML((m.tournament && String(m.tournament).trim()) || DEFAULT_TOURNAMENT)}</span>
+            ${m.week ? `<span class="admin-mini-pill">${m.week}. Hafta</span>` : ''}
+            ${m.dateTbd ? `<span class="admin-mini-pill warn">tarih onaylanacak</span>` : ''}
           </div>
           <button onclick="removePending(${idx})" class="btn-remove-pending">Sil</button>
         `;
@@ -4088,10 +4708,22 @@
 
       const batch = db.batch();
       let saved = 0;
-      const knownMatches = new Set(matches.map(match => {
+      const matchKeyOf = (match) => {
         const date = match.datetime;
         return `${date?.getTime()}|${match.homeTeam}|${match.awayTeam}|${tournamentOf(match)}`.toLocaleLowerCase('tr-TR');
-      }));
+      };
+      const knownMatches = new Set(matches.map(matchKeyOf));
+      // Canlı listener yalnızca yakın tarih penceresini içerir; tüm sezon fikstürü
+      // gibi uzak tarihli yapıştırmalarda mükerrer kaydı önlemek için gelecekteki
+      // tüm maçların anahtarları bir kez okunur.
+      try {
+        const futureSnap = await db.collection('matches')
+          .where('datetime', '>=', firebase.firestore.Timestamp.fromDate(new Date()))
+          .get();
+        futureSnap.docs.map(mapMatchDoc).forEach(match => knownMatches.add(matchKeyOf(match)));
+      } catch (e) {
+        console.warn('Gelecek maçlar dedup için okunamadı; yakın pencereyle devam ediliyor.', e);
+      }
 
       for (const m of pendingMatches) {
         const dt = parseDateTime(m.dateStr, m.timeStr);
@@ -4110,6 +4742,8 @@
           homeScore: null,
           awayScore: null,
           finalized: false,
+          ...(m.week ? { week: m.week } : {}),
+          ...(m.dateTbd ? { dateTbd: true } : {}),
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         saved++;
@@ -4159,7 +4793,8 @@
         { dateStr: "24.06", timeStr: "05:00", homeTeam: "Kolombiya", awayTeam: "DR Kongo" }
       ];
 
-      pendingMatches = samples.map(m => ({ ...m, tournament: selectedTournament }));
+      const entryYear = document.getElementById('bulk-year')?.value || DEFAULT_YEAR;
+      pendingMatches = samples.map(m => ({ ...m, dateStr: `${m.dateStr}.${entryYear}`, tournament: selectedTournament }));
       renderPendingMatches();
       showToast('Örnek maçlar eklendi. "Maçları Kaydet" ile kaydedin.', 'success');
     }
@@ -4169,7 +4804,7 @@
     //   "Date / Home / Time / Away"  (fixture lists)
     //   "Date / Time / Home / Away"
     //   "Date / Home / 2 - 0 / Away / MS"  (finished results — scores are ignored)
-    function parseMatchesFromText(text) {
+    function parseMatchesFromText(text, fallbackYear = DEFAULT_YEAR) {
       if (!text || !text.trim()) return [];
 
       const lines = text.split(/\r?\n/)
@@ -4192,7 +4827,9 @@
         const monthName = Object.keys(months).find(month => words.includes(month));
         const dayMatch = line.match(/\b(\d{1,2})\b/);
         if (monthName && dayMatch) {
-          return `${dayMatch[1].padStart(2, '0')}.${String(months[monthName]).padStart(2, '0')}`;
+          const yearMatch = line.match(/\b(20\d{2})\b/);
+          const year = yearMatch ? yearMatch[1] : fallbackYear;
+          return `${dayMatch[1].padStart(2, '0')}.${String(months[monthName]).padStart(2, '0')}.${year}`;
         }
         return null;
       };
@@ -4202,13 +4839,32 @@
       };
       const isScore = (line) => /^\d{1,2}\s*[-:–]\s*\d{1,2}$/.test(line);
 
+      // "1. Hafta" / "Hafta 5" başlıkları: sonraki maçlara hafta numarası atanır ve
+      // başlık altındaki tarihler TFF yer tutucusu sayıldığından dateTbd işaretlenir.
+      const matchWeekHeader = (line) => {
+        const m = /^(?:(\d{1,2})\s*\.?\s*hafta|hafta\s*(\d{1,2}))$/i.exec(
+          line.toLocaleLowerCase('tr-TR').trim()
+        );
+        return m ? parseInt(m[1] || m[2], 10) : null;
+      };
+
       const results = [];
       let currentDateStr = null;
       let currentTime = null;
       let pendingHome = null;
+      let currentWeek = null;
 
       for (const line of lines) {
         const lower = line.toLocaleLowerCase('tr-TR');
+
+        const weekNo = matchWeekHeader(line);
+        if (weekNo) {
+          currentWeek = weekNo;
+          currentDateStr = null;
+          currentTime = null;
+          pendingHome = null;
+          continue;
+        }
 
         const dateStr = matchDate(line);
         if (dateStr) {
@@ -4237,7 +4893,8 @@
             dateStr: currentDateStr,
             timeStr: currentTime || '12:00',
             homeTeam: pendingHome,
-            awayTeam: line
+            awayTeam: line,
+            ...(currentWeek ? { week: currentWeek, dateTbd: true } : {})
           });
           pendingHome = null;
           currentTime = null;
@@ -4250,14 +4907,22 @@
     function parseAndAddBulk() {
       const textarea = document.getElementById('bulk-text');
       const text = textarea.value;
-      const parsed = parseMatchesFromText(text);
+      const fallbackYear = document.getElementById('bulk-year')?.value || DEFAULT_YEAR;
+      const parsed = parseMatchesFromText(text, fallbackYear);
 
       if (parsed.length === 0) {
         showToast('Hiç maç algılanamadı. Metni kontrol et.', 'warning');
         return;
       }
 
-      pendingMatches = pendingMatches.concat(parsed.map(m => ({ ...m, tournament: selectedTournament })));
+      // Metinde hafta başlığı yoksa opsiyonel "Hafta no" alanı tüm batch'e uygulanır.
+      // Elle girilen tarihler gerçek kabul edilir; dateTbd yalnızca başlıklı yapıştırmada işaretlenir.
+      const fallbackWeek = parseInt(document.getElementById('bulk-week')?.value, 10);
+      const withWeek = (m) => (m.week || isNaN(fallbackWeek) || fallbackWeek < 1)
+        ? m
+        : { ...m, week: fallbackWeek };
+
+      pendingMatches = pendingMatches.concat(parsed.map(m => ({ ...withWeek(m), tournament: selectedTournament })));
       renderPendingMatches();
       showToast(`${parsed.length} maç ayrıştırıldı ve "${selectedTournament}" etiketiyle listeye eklendi.`, 'success');
     }
@@ -4611,7 +5276,6 @@
     function switchView(view) {
       const views = {
         matches: document.getElementById('view-matches'),
-        predictions: document.getElementById('view-predictions'),
         leaderboard: document.getElementById('view-leaderboard'),
         archive: document.getElementById('view-archive'),
         museum: document.getElementById('view-museum'),
@@ -4621,7 +5285,6 @@
 
       const btns = {
         matches: document.getElementById('view-btn-matches'),
-        predictions: document.getElementById('view-btn-predictions'),
         leaderboard: document.getElementById('view-btn-leaderboard'),
         archive: document.getElementById('view-btn-archive'),
         museum: document.getElementById('view-btn-museum'),
@@ -4642,7 +5305,6 @@
 
       currentView = view;
 
-      if (view === 'predictions') renderPredictionsView();
       if (view === 'leaderboard') {
         // Form/analiz/detay verisi breakdownArchiveDocs önbelleğinden gelir
         // (renderLeaderboard → ensureLeaderboardFormData); ayrıca sayfalı arşivi
@@ -4656,6 +5318,10 @@
         }
         renderArchive();
         if (optimizedMode && !archiveDaysIndexLoaded) loadArchiveDayIndex();
+        // Hafta chip'leri tam arşiv önbelleğinden türetilir; yüklü değilse getir.
+        if (optimizedMode && breakdownArchiveDocs === null) {
+          ensureLeaderboardFormData().then(() => { if (currentView === 'archive') renderArchive(); });
+        }
       }
       if (view === 'museum') renderMuseum();
       if (view === 'admin' && isAdmin) {
@@ -4664,6 +5330,7 @@
         renderAdminUsers();
         renderWhitelist();
         loadNotificationSettings();
+        loadDateProposals();
         renderAdminArchive(); // archive panel stays collapsed; loads on first expand
       }
     }
@@ -4748,6 +5415,7 @@
 
     // ================== MAIN INIT ==================
     function init() {
+      initMatchYearSelectors();
       auth.onAuthStateChanged(async (user) => {
         if (user) {
           currentUser = user;
