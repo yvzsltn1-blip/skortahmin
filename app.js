@@ -2169,14 +2169,32 @@
 
     // Tahmin onayı: tema uyumlu özel modal, native confirm yerine. Promise<boolean> döner.
     let _predictConfirmResolver = null;
+    function setPredictConfirmTeamBadge(badge, teamName) {
+      if (!badge) return;
+
+      const name = String(teamName || '').trim();
+      badge.textContent = teamMonogram(name);
+      badge.setAttribute('aria-label', `${name || 'Takım'} logosu`);
+
+      const slug = teamLogoSlug(name);
+      if (!slug) return;
+
+      const logo = document.createElement('img');
+      logo.className = 'pc-team-logo';
+      logo.src = `assets/teams/${slug}.png`;
+      logo.alt = '';
+      logo.addEventListener('error', () => logo.remove(), { once: true });
+      badge.appendChild(logo);
+    }
+
     function confirmPrediction(match, h, a) {
       const modal = document.getElementById('predict-confirm-modal');
       document.getElementById('pc-home-name').textContent = match.homeTeam;
       document.getElementById('pc-away-name').textContent = match.awayTeam;
       const homeBadge = document.getElementById('pc-home-badge');
       const awayBadge = document.getElementById('pc-away-badge');
-      if (homeBadge) homeBadge.textContent = (match.homeTeam || '?').trim().charAt(0).toUpperCase() || '?';
-      if (awayBadge) awayBadge.textContent = (match.awayTeam || '?').trim().charAt(0).toUpperCase() || '?';
+      setPredictConfirmTeamBadge(homeBadge, match.homeTeam);
+      setPredictConfirmTeamBadge(awayBadge, match.awayTeam);
       document.getElementById('pc-home-score').textContent = h;
       document.getElementById('pc-away-score').textContent = a;
       const odd = scoreOddFor(match, h, a);

@@ -4178,6 +4178,8 @@
       flex-shrink: 0;
       width: 40px;
       height: 40px;
+      position: relative;
+      overflow: hidden;
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -4189,6 +4191,16 @@
       letter-spacing: -0.5px;
       background: linear-gradient(145deg, var(--accent-gold) 0%, #B8901F 100%);
       box-shadow: 0 4px 12px rgba(232,197,71,0.25), 0 0 0 1px rgba(255,255,255,0.08) inset;
+    }
+    .pc-team-logo {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      padding: 10%;
+      object-fit: contain;
+      border-radius: inherit;
+      background: linear-gradient(145deg, #17201c, #0c110f);
     }
     .pc-team-home .pc-team-badge {
       background: linear-gradient(145deg, var(--accent) 0%, var(--accent-dark) 100%);
