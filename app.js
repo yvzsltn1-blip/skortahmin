@@ -52,6 +52,15 @@
     let unsubscribeSettings = null;
     let unsubscribeLeaderboard = null;
 
+    // ----- Sezon bonus tahminleri -----
+    let bonusConfigs = [];               // bonus/{docId} config dokümanları
+    let bonusTotalsByTournament = {};    // settings/bonus.byTournament: { turnuva: { uid: puan } }
+    let unsubscribeBonus = null;
+    let unsubscribeBonusTotals = null;
+    const bonusPicksCache = {};          // cfgId -> { unsub, docs: null|[] } (arşiv sabiti + admin puanlama)
+    const bonusMyPicks = {};             // cfgId -> kendi tahmin dokümanı | null (banner için tek okuma)
+    const bonusMyPickLoading = {};
+
     // ----- Read-optimization state -----
     // Optimized mode is active once the aggregate leaderboard document exists
     // (created by the admin "Yeniden Hesapla" migration). Before that we fall back
@@ -840,6 +849,7 @@
 
     function renderAll() {
       renderMatches();
+      renderBonusEntryBanner();
       renderArchive();
       renderLeaderboard();
       if (isAdmin && !document.getElementById('view-admin').classList.contains('hidden')) {
@@ -858,6 +868,8 @@
       matches.forEach(m => set.add(tournamentOf(m)));
       archiveDocs.forEach(m => set.add(tournamentOf(m)));
       Object.keys(leaderboardTotalsByTournament || {}).forEach(t => set.add(t));
+      bonusConfigs.forEach(c => { if (c.tournament) set.add(c.tournament); });
+      Object.keys(bonusTotalsByTournament || {}).forEach(t => set.add(t));
       return Array.from(set);
     }
 
@@ -1161,6 +1173,23 @@
         if (isAdmin) renderWhitelist();
       });
 
+      // --- Sezon bonus tahminleri (küçük koleksiyon + tek toplam dokümanı; her iki modda da) ---
+      if (unsubscribeBonus) unsubscribeBonus();
+      unsubscribeBonus = db.collection('bonus').onSnapshot(snap => {
+        bonusConfigs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderBonusEntryBanner();
+        if (currentView === 'archive') renderBonusArchivePinned();
+        if (isAdmin) renderAdminBonus();
+        refreshTournamentUI();
+      }, err => console.error(err));
+
+      if (unsubscribeBonusTotals) unsubscribeBonusTotals();
+      unsubscribeBonusTotals = db.collection('settings').doc('bonus').onSnapshot(doc => {
+        bonusTotalsByTournament = (doc.exists && doc.data().byTournament) || {};
+        renderLeaderboard();
+        if (currentView === 'archive') renderBonusArchivePinned();
+      }, err => console.error(err));
+
       if (optimizedMode) {
         // --- Aggregate leaderboard (1 doc) ---
         if (unsubscribeLeaderboard) unsubscribeLeaderboard();
@@ -1259,6 +1288,14 @@
       if (unsubscribeUsers) unsubscribeUsers();
       if (unsubscribeSettings) unsubscribeSettings();
       if (unsubscribeLeaderboard) unsubscribeLeaderboard();
+      if (unsubscribeBonus) unsubscribeBonus();
+      if (unsubscribeBonusTotals) unsubscribeBonusTotals();
+      Object.keys(bonusPicksCache).forEach(key => {
+        try { bonusPicksCache[key].unsub && bonusPicksCache[key].unsub(); } catch (e) {}
+        delete bonusPicksCache[key];
+      });
+      Object.keys(bonusMyPicks).forEach(key => delete bonusMyPicks[key]);
+      Object.keys(bonusMyPickLoading).forEach(key => delete bonusMyPickLoading[key]);
       stopActivePredictions();
     }
 
@@ -2017,6 +2054,7 @@
       if (!archiveTournamentFilter) archiveTournamentFilter = defaultTournament || DEFAULT_TOURNAMENT;
 
       renderArchiveTournamentTabs();
+      renderBonusArchivePinned();
       renderArchiveWeekFilter();
 
       const container = document.getElementById('archive-list');
@@ -2998,6 +3036,16 @@
         });
       }
 
+      // Onaylanmış sezon bonus tahmin puanları (settings/bonus) toplamlara eklenir.
+      Object.entries(bonusTotalsByTournament || {}).forEach(([t, byUid]) => {
+        if (tFilter !== ALL_TOURNAMENTS && t !== tFilter) return;
+        Object.entries(byUid || {}).forEach(([uid, pts]) => {
+          const v = Number(pts) || 0;
+          if (!v) return;
+          pointsMap[uid] = (pointsMap[uid] || 0) + v;
+        });
+      });
+
       let rows = Object.keys(pointsMap).map(uid => {
         const profile = usersMap[uid] || {};
         const history = getUserResultHistory(uid);
@@ -3313,23 +3361,45 @@
 
       const breakdown = getUserBreakdown(uid, breakdownSortMode);
 
+      // Onaylanmış sezon bonus tahmin puanları — puan durumu filtresine uyar
+      const bdFilter = leaderboardTournamentFilter;
+      const bonusItems = [];
+      Object.entries(bonusTotalsByTournament || {}).forEach(([t, byUid]) => {
+        if (bdFilter !== ALL_TOURNAMENTS && t !== bdFilter) return;
+        const v = Number((byUid || {})[uid]) || 0;
+        if (v) bonusItems.push({ tournament: t, points: v });
+      });
+      const bonusSum = bonusItems.reduce((acc, it) => acc + it.points, 0);
+
       titleEl.textContent = `${displayName} — Puan Detayı`;
       const sortLabel = breakdownSortMode === 'date' ? 'Son alınandan ilke' : 'Puanlar yüksekten düşüğe';
       subEl.textContent = breakdown.length ? `${breakdown.length} maç • ${sortLabel}` : '';
 
-      if (!breakdown.length) {
+      if (!breakdown.length && !bonusItems.length) {
         bodyEl.innerHTML = `<div class="breakdown-empty">Bu kullanıcı için henüz puanlandırılmış maç bulunamadı.</div>`;
         totalEl.textContent = '';
         return;
       }
 
       // Toplam, listenin tamamı üzerinden hesaplanır (sadece gösterilenler değil)
-      const sum = breakdown.reduce((acc, it) => acc + (Number(it.points) || 0), 0);
+      const sum = breakdown.reduce((acc, it) => acc + (Number(it.points) || 0), 0) + bonusSum;
 
       // Sayfalama: yalnızca ilk `breakdownShown` maçı çiz; gerisi "Devamını gör" ile gelir
       const visible = breakdown.slice(0, breakdownShown);
 
       let html = '';
+      bonusItems.forEach(item => {
+        html += `
+          <div class="breakdown-row">
+            <div class="breakdown-match">
+              <div class="breakdown-date">Sezon Bonus Tahmini</div>
+              <div class="breakdown-teams">🎯 ${escapeHTML(item.tournament)}</div>
+              <div class="breakdown-pred">Sezon başı tahmin puanı (admin onaylı)</div>
+            </div>
+            <div class="breakdown-points positive">+${formatPoints(item.points)}</div>
+          </div>
+        `;
+      });
       visible.forEach(item => {
         const hasResult = item.homeScore != null && item.awayScore != null;
         const pts = item.points;
@@ -3384,6 +3454,667 @@
     function closeBreakdownModal() {
       const modal = document.getElementById('breakdown-modal');
       if (modal) modal.classList.add('hidden');
+    }
+
+    // ================== SEZON BONUS TAHMİNLERİ ==================
+    // Admin bir turnuvaya bonus tahmin açar (bonus/{docId} config dokümanı):
+    //   mode 'ranking'  → ilk N + son M sıra tahmini (doğru sıra başına sabit puan)
+    //   mode 'champion' → sadece şampiyon tahmini (puanı admin oran bazlı belirler)
+    // Kullanıcı tahminleri bonus/{docId}/picks/{uid} altında tutulur. Sezon sonunda
+    // admin her tahmine puan yazar + ekstra ekler + onaylar; onaylanan toplamlar
+    // settings/bonus.byTournament'a yazılır ve puan durumu toplamlarına eklenir.
+
+    function bonusDocIdFor(tournament) {
+      return String(tournament).trim().replace(/\//g, '_');
+    }
+
+    // Etikete (turnuvaya) göre tahmin edilecek sıralar: ranking modda ilk N + son M,
+    // champion modda tek "champion" anahtarı. Form ve puanlama hep bu sırayı izler.
+    function bonusPositionsFor(cfg) {
+      if (!cfg || cfg.mode === 'champion') return ['champion'];
+      const total = Number(cfg.totalTeams) || 18;
+      const top = Math.min(Number(cfg.topCount) || 0, total);
+      const bottom = Number(cfg.bottomCount) || 0;
+      const positions = [];
+      for (let i = 1; i <= top; i++) positions.push(String(i));
+      for (let i = Math.max(total - bottom + 1, top + 1); i <= total; i++) positions.push(String(i));
+      return positions;
+    }
+
+    function bonusPositionLabel(key) {
+      return key === 'champion' ? 'Şampiyon' : `${key}.`;
+    }
+
+    function bonusModeText(cfg) {
+      return cfg.mode === 'champion'
+        ? 'Şampiyon tahmini'
+        : `İlk ${cfg.topCount || 6} + Son ${cfg.bottomCount || 3} sıralama tahmini (doğru sıra +${cfg.pointsPerCorrect || 10} puan)`;
+    }
+
+    // Turnuvada geçen takım adları — bellekteki maçlardan toplanır (yedek yöntem;
+    // asıl liste config.teams'te durur, bkz. fetchTournamentTeams).
+    function bonusTeamNamesFor(tournament) {
+      const names = new Set();
+      const collect = (m) => {
+        if (tournamentOf(m) !== tournament) return;
+        if (m.homeTeam) names.add(String(m.homeTeam).trim());
+        if (m.awayTeam) names.add(String(m.awayTeam).trim());
+      };
+      matches.forEach(collect);
+      archiveDocs.forEach(collect);
+      if (Array.isArray(breakdownArchiveDocs)) breakdownArchiveDocs.forEach(collect);
+      return Array.from(names).sort((a, b) => a.localeCompare(b, 'tr'));
+    }
+
+    // Etiketin TÜM maçlarını (gelecek haftalar dahil) tarayıp takım listesini çıkarır.
+    // Config oluştururken / "Takımları Yenile" denince bir kez çalışır; sonuç
+    // config.teams'e yazıldığı için kullanıcılar ekstra okuma yapmaz.
+    async function fetchTournamentTeams(tournament) {
+      const snap = await db.collection('matches').where('tournament', '==', tournament).get();
+      const names = new Set();
+      snap.docs.forEach(d => {
+        const m = d.data();
+        if (m.homeTeam) names.add(String(m.homeTeam).trim());
+        if (m.awayTeam) names.add(String(m.awayTeam).trim());
+      });
+      // Bellekte görünen maçlar da katılsın (etiketsiz varsayılan turnuva vb.)
+      bonusTeamNamesFor(tournament).forEach(n => names.add(n));
+      return Array.from(names).sort((a, b) => a.localeCompare(b, 'tr'));
+    }
+
+    // Config'teki takım listesi (yoksa bellekteki maçlardan türetilen yedek liste)
+    function bonusTeamsOf(cfg) {
+      return (Array.isArray(cfg.teams) && cfg.teams.length)
+        ? cfg.teams
+        : bonusTeamNamesFor(cfg.tournament);
+    }
+
+    async function refreshBonusTeams(cfgId) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin) return;
+      try {
+        const teams = await fetchTournamentTeams(cfg.tournament);
+        await db.collection('bonus').doc(cfgId).set({
+          teams,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        showToast(`${cfg.tournament}: ${teams.length} takım bulundu ve listeye kaydedildi.`, 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Takım listesi güncellenemedi.', 'error');
+      }
+    }
+
+    // Kendi tahminim (banner durumu için): cihaz başına config başına 1 okuma.
+    async function loadMyBonusPick(cfg) {
+      if (!currentUser || bonusMyPickLoading[cfg.id]) return;
+      bonusMyPickLoading[cfg.id] = true;
+      try {
+        const snap = await db.collection('bonus').doc(cfg.id).collection('picks').doc(currentUser.uid).get();
+        bonusMyPicks[cfg.id] = snap.exists ? { uid: currentUser.uid, ...snap.data() } : null;
+      } catch (e) {
+        console.error(e);
+        bonusMyPicks[cfg.id] = null;
+      } finally {
+        bonusMyPickLoading[cfg.id] = false;
+        renderBonusEntryBanner();
+      }
+    }
+
+    // Tüm tahminler (arşiv sabiti + admin puanlama): config başına canlı dinleyici.
+    function ensureBonusPicks(cfg) {
+      if (bonusPicksCache[cfg.id]) return;
+      const cache = { unsub: null, docs: null };
+      bonusPicksCache[cfg.id] = cache;
+      cache.unsub = db.collection('bonus').doc(cfg.id).collection('picks').onSnapshot(snap => {
+        cache.docs = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        if (currentUser) {
+          bonusMyPicks[cfg.id] = cache.docs.find(p => p.uid === currentUser.uid) || null;
+        }
+        if (currentView === 'archive') renderBonusArchivePinned();
+        if (currentView === 'matches') renderBonusEntryBanner();
+        if (isAdmin) renderAdminBonus();
+      }, err => console.error(err));
+    }
+
+    // ---------- Kullanıcı: fikstür üstü banner + tahmin modalı ----------
+    function renderBonusEntryBanner() {
+      const container = document.getElementById('bonus-entry-banner');
+      if (!container) return;
+      const openConfigs = bonusConfigs.filter(c => c.open === true);
+      if (!openConfigs.length) { container.innerHTML = ''; return; }
+
+      container.innerHTML = openConfigs.map(cfg => {
+        const mine = bonusMyPicks[cfg.id];
+        if (mine === undefined) loadMyBonusPick(cfg);
+        const status = mine === undefined
+          ? 'Tahmin durumun yükleniyor…'
+          : (mine
+              ? '✅ Tahminini girdin — giriş kapanana kadar düzenleyebilirsin.'
+              : '⏳ Henüz tahmin girmedin!');
+        return `
+          <div class="bonus-banner" data-bonus-id="${escapeHTML(cfg.id)}">
+            <div class="bonus-banner-info">
+              <div class="bonus-banner-title">🎯 ${escapeHTML(cfg.tournament)} — Sezon Bonus Tahmini</div>
+              <div class="bonus-banner-sub">${escapeHTML(bonusModeText(cfg))}${cfg.desc ? ` • ${escapeHTML(cfg.desc)}` : ''}</div>
+              <div class="bonus-banner-status ${mine ? 'done' : 'todo'}">${status}</div>
+            </div>
+            <button type="button" class="btn btn-primary bonus-banner-btn">${mine ? 'Tahminini Düzenle' : 'Tahmin Yap'}</button>
+          </div>`;
+      }).join('');
+
+      container.querySelectorAll('.bonus-banner-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.closest('.bonus-banner').dataset.bonusId;
+          const cfg = bonusConfigs.find(c => c.id === id);
+          if (cfg) openBonusModal(cfg);
+        });
+      });
+    }
+
+    let bonusModalCfgId = null;
+
+    async function openBonusModal(cfg) {
+      const modal = document.getElementById('bonus-modal');
+      const body = document.getElementById('bonus-modal-body');
+      const subEl = document.getElementById('bonus-modal-subtitle');
+      const titleEl = document.getElementById('bonus-modal-title');
+      if (!modal || !body || !currentUser) return;
+      if (cfg.open !== true) { showToast('Bu turnuvanın bonus tahmin girişi kapalı.', 'error'); return; }
+
+      bonusModalCfgId = cfg.id;
+      titleEl.textContent = `🎯 ${cfg.tournament} — Sezon Bonus Tahmini`;
+      subEl.textContent = bonusModeText(cfg) + (cfg.desc ? ` • ${cfg.desc}` : '');
+
+      // Mevcut tahmin yüklenmeden boş form gösterme (yanlışlıkla üzerine yazılmasın)
+      if (bonusMyPicks[cfg.id] === undefined) {
+        body.innerHTML = `<div class="empty-badge">Tahminin yükleniyor…</div>`;
+        modal.classList.remove('hidden');
+        await loadMyBonusPick(cfg);
+        if (bonusModalCfgId !== cfg.id || modal.classList.contains('hidden')) return;
+      }
+
+      const positions = bonusPositionsFor(cfg);
+      const picks = (bonusMyPicks[cfg.id] && bonusMyPicks[cfg.id].picks) || {};
+      const teams = bonusTeamsOf(cfg);
+      const datalist = teams.length
+        ? `<datalist id="bonus-team-datalist">${teams.map(t => `<option value="${escapeHTML(t)}">`).join('')}</datalist>`
+        : '';
+      const hint = teams.length
+        ? `<div class="bonus-teams-hint">Yazmaya başla, listeden seç — yalnızca bu turnuvanın ${teams.length} takımı seçilebilir.</div>`
+        : '';
+
+      body.innerHTML = datalist + hint + positions.map(pos => `
+        <div class="bonus-pick-row">
+          <label class="bonus-pos-label">${bonusPositionLabel(pos)}</label>
+          <input type="text" class="input-field bonus-pick-input" data-pos="${pos}"
+                 ${teams.length ? 'list="bonus-team-datalist"' : ''}
+                 autocomplete="off" placeholder="Takım adı yaz / seç" value="${escapeHTML(picks[pos] || '')}">
+        </div>`).join('');
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeBonusModal() {
+      const modal = document.getElementById('bonus-modal');
+      if (modal) modal.classList.add('hidden');
+      bonusModalCfgId = null;
+    }
+
+    async function saveBonusPicks() {
+      const cfg = bonusConfigs.find(c => c.id === bonusModalCfgId);
+      const body = document.getElementById('bonus-modal-body');
+      if (!cfg || !body || !currentUser) return;
+
+      const picks = {};
+      let missing = false;
+      body.querySelectorAll('input[data-pos]').forEach(inp => {
+        const val = inp.value.trim();
+        if (!val) missing = true;
+        else picks[inp.dataset.pos] = val;
+      });
+      if (missing) { showToast('Lütfen tüm sıraları doldur.', 'error'); return; }
+
+      // Yalnızca turnuvanın takım listesindeki adlar kabul edilir; büyük/küçük
+      // harf farkı otomatik düzeltilir (galatasaray → Galatasaray).
+      const teams = bonusTeamsOf(cfg);
+      if (teams.length) {
+        const canonical = {};
+        teams.forEach(t => { canonical[t.toLocaleLowerCase('tr')] = t; });
+        const invalid = [];
+        Object.keys(picks).forEach(pos => {
+          const match = canonical[picks[pos].toLocaleLowerCase('tr')];
+          if (match) picks[pos] = match;
+          else invalid.push(picks[pos]);
+        });
+        if (invalid.length) {
+          showToast(`Bu takım(lar) turnuva listesinde yok: ${invalid.join(', ')}. Listeden seç.`, 'error');
+          return;
+        }
+      }
+
+      // Aynı takım iki sıraya yazılmasın (ranking modunda)
+      const values = Object.values(picks).map(v => v.toLocaleLowerCase('tr'));
+      if (cfg.mode !== 'champion' && new Set(values).size !== values.length) {
+        showToast('Aynı takımı birden fazla sıraya yazamazsın.', 'error');
+        return;
+      }
+
+      const saveBtn = document.getElementById('bonus-modal-save');
+      if (saveBtn) saveBtn.disabled = true;
+      try {
+        await db.collection('bonus').doc(cfg.id).collection('picks').doc(currentUser.uid).set({
+          uid: currentUser.uid,
+          name: currentUserProfile?.displayName || currentUser.email,
+          picks,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        bonusMyPicks[cfg.id] = { ...(bonusMyPicks[cfg.id] || { uid: currentUser.uid }), picks };
+        closeBonusModal();
+        showToast('Bonus tahminin kaydedildi. 🎯', 'success');
+        renderBonusEntryBanner();
+        if (currentView === 'archive') renderBonusArchivePinned();
+      } catch (e) {
+        console.error(e);
+        showToast('Tahmin kaydedilemedi. Giriş kapanmış olabilir.', 'error');
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    // ---------- Arşiv üstü: sabitlenmiş tahmin tablosu ----------
+    function renderBonusArchivePinned() {
+      const container = document.getElementById('bonus-archive-pinned');
+      if (!container) return;
+      const tf = archiveTournamentFilter;
+      const cfgs = bonusConfigs.filter(c =>
+        c.pinned === true && (tf == null || tf === ALL_TOURNAMENTS || c.tournament === tf));
+      if (!cfgs.length) { container.innerHTML = ''; return; }
+
+      container.innerHTML = cfgs.map(cfg => {
+        ensureBonusPicks(cfg);
+        const cache = bonusPicksCache[cfg.id];
+        const docs = cache && Array.isArray(cache.docs) ? cache.docs : null;
+
+        let rowsHTML;
+        if (docs === null) {
+          rowsHTML = `<div class="empty-badge">Tahminler yükleniyor…</div>`;
+        } else if (!docs.length) {
+          rowsHTML = `<div class="empty-badge">Henüz kimse tahmin girmedi.</div>`;
+        } else {
+          const positions = bonusPositionsFor(cfg);
+          const sorted = docs.slice().sort((a, b) => {
+            const ta = a.approved ? (Number(a.total) || 0) : -1;
+            const tb = b.approved ? (Number(b.total) || 0) : -1;
+            if (tb !== ta) return tb - ta;
+            const na = (usersMap[a.uid]?.displayName || a.name || '');
+            const nb = (usersMap[b.uid]?.displayName || b.name || '');
+            return na.localeCompare(nb, 'tr');
+          });
+          rowsHTML = sorted.map(pick => {
+            const name = usersMap[pick.uid]?.displayName || pick.name || 'Bilinmeyen';
+            const isMe = currentUser && pick.uid === currentUser.uid;
+            const awarded = pick.awarded || {};
+            const picksHTML = positions.map(pos => {
+              const team = (pick.picks || {})[pos];
+              if (!team) return '';
+              const pts = Number(awarded[pos]) || 0;
+              return `<span class="bonus-pick-chip ${pts > 0 ? 'hit' : (pick.approved ? 'miss' : '')}">
+                        ${bonusPositionLabel(pos)} ${escapeHTML(team)}${pts > 0 ? ` <b>+${formatPoints(pts)}</b>` : ''}
+                      </span>`;
+            }).join('');
+            const extra = Number(pick.extra) || 0;
+            const totalHTML = pick.approved
+              ? `<span class="bonus-total-pill">${extra ? `+${formatPoints(extra)} ekstra • ` : ''}${formatPoints(Number(pick.total) || 0)} puan</span>`
+              : `<span class="bonus-total-pill pending">puanlama bekleniyor</span>`;
+            return `
+              <div class="bonus-pinned-row ${isMe ? 'is-me' : ''}">
+                <div class="bonus-pinned-user">${escapeHTML(name)}</div>
+                <div class="bonus-pinned-picks">${picksHTML}</div>
+                <div class="bonus-pinned-total">${totalHTML}</div>
+              </div>`;
+          }).join('');
+        }
+
+        const entryBtn = (cfg.open === true && currentUser)
+          ? `<button type="button" class="btn btn-secondary btn-sm bonus-pinned-entry-btn" data-bonus-id="${escapeHTML(cfg.id)}">
+               ${bonusMyPicks[cfg.id] ? 'Tahminini Düzenle' : 'Tahmin Yap'}
+             </button>`
+          : '';
+
+        return `
+          <details class="admin-day-group bonus-pinned-card" open>
+            <summary class="admin-day-summary">
+              <span class="admin-day-title">🎯 ${escapeHTML(cfg.tournament)} — Sezon Bonus Tahminleri</span>
+              <span class="admin-day-meta">
+                <span class="admin-mini-pill">${escapeHTML(bonusModeText(cfg))}</span>
+                ${cfg.open === true ? '<span class="admin-mini-pill">Giriş açık</span>' : ''}
+              </span>
+            </summary>
+            <div class="admin-day-body bonus-pinned-body">
+              ${entryBtn}
+              ${rowsHTML}
+            </div>
+          </details>`;
+      }).join('');
+
+      container.querySelectorAll('.bonus-pinned-entry-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cfg = bonusConfigs.find(c => c.id === btn.dataset.bonusId);
+          if (cfg) openBonusModal(cfg);
+        });
+      });
+    }
+
+    // ---------- Admin: oluşturma, aç/kapat, sabit, puanlama, onay ----------
+    function onBonusModeChange(mode) {
+      const fields = document.getElementById('bonus-ranking-fields');
+      if (fields) fields.style.display = mode === 'ranking' ? '' : 'none';
+    }
+
+    async function createBonusConfig() {
+      if (!isAdmin) return;
+      const sel = document.getElementById('bonus-new-tournament');
+      const tournament = sel && sel.value;
+      if (!tournament) { showToast('Turnuva seç.', 'error'); return; }
+      const mode = document.getElementById('bonus-new-mode')?.value === 'champion' ? 'champion' : 'ranking';
+      const desc = (document.getElementById('bonus-new-desc')?.value || '').trim();
+
+      const cfg = {
+        tournament,
+        mode,
+        open: false,     // admin hazır olunca "Girişi Aç" der
+        pinned: true,    // arşiv üstünde göster (turnuva bitince kaldırılabilir)
+        desc,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (mode === 'ranking') {
+        cfg.topCount = parseInt(document.getElementById('bonus-new-top')?.value, 10) || 6;
+        cfg.bottomCount = parseInt(document.getElementById('bonus-new-bottom')?.value, 10) || 3;
+        cfg.totalTeams = parseInt(document.getElementById('bonus-new-total')?.value, 10) || 18;
+        cfg.pointsPerCorrect = parseFloat(document.getElementById('bonus-new-ppc')?.value) || 10;
+      }
+
+      try {
+        // Takım listesi turnuva fikstüründen çıkarılır; tahminler yalnızca bu
+        // listeden seçilebilir. Fikstür sonradan eklenirse "Takımları Yenile" var.
+        cfg.teams = await fetchTournamentTeams(tournament);
+        await db.collection('bonus').doc(bonusDocIdFor(tournament)).set(cfg);
+        showToast(
+          cfg.teams.length
+            ? `${tournament} için bonus tahmin oluşturuldu (${cfg.teams.length} takım bulundu). Kullanıcı girişini açmayı unutma!`
+            : `${tournament} için oluşturuldu ama fikstürde takım bulunamadı — fikstürü ekledikten sonra "Takımları Yenile"ye bas.`,
+          cfg.teams.length ? 'success' : 'error');
+        const descInp = document.getElementById('bonus-new-desc');
+        if (descInp) descInp.value = '';
+      } catch (e) {
+        console.error(e);
+        showToast('Bonus tahmin oluşturulamadı.', 'error');
+      }
+    }
+
+    async function toggleBonusField(cfgId, field) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin) return;
+      try {
+        await db.collection('bonus').doc(cfgId).set({
+          [field]: !(cfg[field] === true),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (e) {
+        console.error(e);
+        showToast('Güncellenemedi.', 'error');
+      }
+    }
+
+    async function deleteBonusConfig(cfgId) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin) return;
+      if (!confirm(`${cfg.tournament} bonus tahmini ve TÜM kullanıcı tahminleri/puanları silinecek. Emin misin?`)) return;
+      try {
+        const snap = await db.collection('bonus').doc(cfgId).collection('picks').get();
+        const batch = db.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        batch.delete(db.collection('bonus').doc(cfgId));
+        batch.set(db.collection('settings').doc('bonus'), {
+          byTournament: { [cfg.tournament]: firebase.firestore.FieldValue.delete() }
+        }, { merge: true });
+        await batch.commit();
+        showToast('Bonus tahmin silindi; puan durumu güncellendi.', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Silinemedi.', 'error');
+      }
+    }
+
+    // Admin puanlama kartlarının açık/kapalı durumu (yeniden çizimde korunur)
+    const adminBonusOpenSet = new Set();
+    let adminBonusRerenderQueued = false;
+    let adminBonusFocusGuardBound = false;
+
+    function renderAdminBonus() {
+      if (!isAdmin) return;
+      const container = document.getElementById('admin-bonus-list');
+      if (!container) return;
+
+      // Admin puan yazarken gelen sunucu güncellemeleri inputları silmesin:
+      // odak konteynerin içindeyse çizimi ertele, odak çıkınca çiz.
+      if (container.contains(document.activeElement) &&
+          /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+        adminBonusRerenderQueued = true;
+        if (!adminBonusFocusGuardBound) {
+          adminBonusFocusGuardBound = true;
+          container.addEventListener('focusout', () => {
+            setTimeout(() => {
+              if (adminBonusRerenderQueued && !container.contains(document.activeElement)) {
+                adminBonusRerenderQueued = false;
+                renderAdminBonus();
+              }
+            }, 150);
+          });
+        }
+        return;
+      }
+      adminBonusRerenderQueued = false;
+
+      // Yeni oluşturma formundaki turnuva seçenekleri (config'i olmayanlar)
+      const configured = new Set(bonusConfigs.map(c => c.tournament));
+      const sel = document.getElementById('bonus-new-tournament');
+      if (sel) {
+        const current = sel.value;
+        const options = knownTournaments().filter(t => !configured.has(t));
+        sel.innerHTML = options.map(t =>
+          `<option value="${escapeHTML(t)}" ${t === current ? 'selected' : ''}>${escapeHTML(t)}</option>`).join('');
+      }
+
+      if (!bonusConfigs.length) {
+        container.innerHTML = `<div class="empty-badge">Henüz bonus tahmin açılmış turnuva yok.</div>`;
+        return;
+      }
+
+      container.innerHTML = bonusConfigs.map(cfg => {
+        ensureBonusPicks(cfg);
+        const cache = bonusPicksCache[cfg.id];
+        const docs = cache && Array.isArray(cache.docs) ? cache.docs : null;
+        const positions = bonusPositionsFor(cfg);
+        const approvedCount = docs ? docs.filter(p => p.approved).length : 0;
+
+        let usersHTML;
+        if (docs === null) {
+          usersHTML = `<div class="empty-badge">Tahminler yükleniyor…</div>`;
+        } else if (!docs.length) {
+          usersHTML = `<div class="empty-badge">Henüz tahmin giren yok.</div>`;
+        } else {
+          usersHTML = docs.slice().sort((a, b) => {
+            const na = usersMap[a.uid]?.displayName || a.name || '';
+            const nb = usersMap[b.uid]?.displayName || b.name || '';
+            return na.localeCompare(nb, 'tr');
+          }).map(pick => {
+            const name = usersMap[pick.uid]?.displayName || pick.name || 'Bilinmeyen';
+            const awarded = pick.awarded || {};
+            const quickPts = cfg.pointsPerCorrect || 10;
+            const rows = positions.map(pos => {
+              const team = (pick.picks || {})[pos] || '—';
+              const val = awarded[pos] != null ? awarded[pos] : '';
+              return `
+                <div class="bonus-score-row">
+                  <span class="bonus-pos-label">${bonusPositionLabel(pos)}</span>
+                  <span class="bonus-score-team">${escapeHTML(team)}</span>
+                  <input type="number" step="0.5" class="input-field bonus-score-input" data-pos="${pos}"
+                         value="${val === '' ? '' : escapeHTML(String(val))}" placeholder="0">
+                  ${cfg.mode !== 'champion' ? `<button type="button" class="btn btn-secondary btn-sm bonus-quick-btn" data-quick="${quickPts}">+${quickPts}</button>` : ''}
+                </div>`;
+            }).join('');
+            return `
+              <div class="bonus-admin-user" data-uid="${escapeHTML(pick.uid)}">
+                <div class="bonus-admin-user-head">
+                  <strong>${escapeHTML(name)}</strong>
+                  ${pick.approved
+                    ? `<span class="admin-mini-pill bonus-approved-pill">✅ Onaylı • ${formatPoints(Number(pick.total) || 0)} puan</span>`
+                    : `<span class="admin-mini-pill">Puanlanmadı</span>`}
+                </div>
+                ${rows}
+                <div class="bonus-score-row bonus-extra-row">
+                  <span class="bonus-pos-label">Ekstra</span>
+                  <span class="bonus-score-team">Ekstra puan (ops.)</span>
+                  <input type="number" step="0.5" class="input-field bonus-score-input" data-extra="1"
+                         value="${pick.extra != null && pick.extra !== 0 ? escapeHTML(String(pick.extra)) : ''}" placeholder="0">
+                </div>
+                <div class="bonus-admin-user-actions">
+                  <span class="bonus-total-preview">Toplam: <b>0</b> puan</span>
+                  <button type="button" class="btn btn-primary btn-sm bonus-save-btn">${pick.approved ? 'Güncelle ve Onayla' : 'Kaydet ve Onayla'}</button>
+                  ${pick.approved ? `<button type="button" class="btn btn-secondary btn-sm bonus-unapprove-btn">Onayı Kaldır</button>` : ''}
+                </div>
+              </div>`;
+          }).join('');
+        }
+
+        return `
+          <details class="admin-day-group bonus-admin-card" data-bonus-id="${escapeHTML(cfg.id)}" ${adminBonusOpenSet.has(cfg.id) ? 'open' : ''}>
+            <summary class="admin-day-summary">
+              <span class="admin-day-title">🎯 ${escapeHTML(cfg.tournament)}</span>
+              <span class="admin-day-meta">
+                <span class="admin-mini-pill">${cfg.mode === 'champion' ? 'Şampiyon' : `İlk ${cfg.topCount || 6} + Son ${cfg.bottomCount || 3}`}</span>
+                <span class="admin-mini-pill ${cfg.open === true ? 'bonus-pill-on' : ''}">${cfg.open === true ? 'Giriş AÇIK' : 'Giriş kapalı'}</span>
+                <span class="admin-mini-pill ${cfg.pinned === true ? 'bonus-pill-on' : ''}">${cfg.pinned === true ? 'Arşivde sabit' : 'Sabit değil'}</span>
+                <span class="admin-mini-pill ${(cfg.teams || []).length ? '' : 'bonus-pill-warn'}">${(cfg.teams || []).length || 'takım yok!'}${(cfg.teams || []).length ? ' takım' : ''}</span>
+                ${docs ? `<span class="admin-mini-pill">${docs.length} tahmin • ${approvedCount} onaylı</span>` : ''}
+              </span>
+            </summary>
+            <div class="admin-day-body">
+              <div class="admin-btn-group bonus-admin-toggles">
+                <button type="button" class="btn btn-secondary btn-sm" data-act="toggle-open">${cfg.open === true ? '🔒 Girişi Kapat' : '🔓 Girişi Aç'}</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-act="toggle-pin">${cfg.pinned === true ? '📌 Arşiv Sabitini Kaldır' : '📌 Arşivde Sabitle'}</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-act="refresh-teams">🔄 Takımları Yenile</button>
+                <button type="button" class="btn btn-secondary btn-sm bonus-delete-btn" data-act="delete">🗑️ Sil</button>
+              </div>
+              ${(cfg.teams || []).length
+                ? `<div class="bonus-teams-hint">Seçilebilir takımlar (${cfg.teams.length}): ${cfg.teams.map(t => escapeHTML(t)).join(' · ')}</div>`
+                : `<div class="bonus-teams-hint bonus-teams-warn">⚠️ Takım listesi boş — kullanıcılar serbest yazacak. Fikstürü ekledikten sonra "Takımları Yenile"ye bas.</div>`}
+              ${usersHTML}
+            </div>
+          </details>`;
+      }).join('');
+
+      // ---- Etkileşimler ----
+      container.querySelectorAll('.bonus-admin-card').forEach(card => {
+        const cfgId = card.dataset.bonusId;
+        card.addEventListener('toggle', () => {
+          if (card.open) adminBonusOpenSet.add(cfgId); else adminBonusOpenSet.delete(cfgId);
+        });
+        card.querySelectorAll('[data-act]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const act = btn.dataset.act;
+            if (act === 'toggle-open') toggleBonusField(cfgId, 'open');
+            else if (act === 'toggle-pin') toggleBonusField(cfgId, 'pinned');
+            else if (act === 'refresh-teams') refreshBonusTeams(cfgId);
+            else if (act === 'delete') deleteBonusConfig(cfgId);
+          });
+        });
+        card.querySelectorAll('.bonus-admin-user').forEach(block => {
+          const recalc = () => {
+            let sum = 0;
+            block.querySelectorAll('input[data-pos], input[data-extra]').forEach(inp => {
+              const v = parseFloat(inp.value);
+              if (!isNaN(v)) sum += v;
+            });
+            const preview = block.querySelector('.bonus-total-preview b');
+            if (preview) preview.textContent = formatPoints(sum);
+          };
+          recalc();
+          block.querySelectorAll('input').forEach(inp => inp.addEventListener('input', recalc));
+          block.querySelectorAll('.bonus-quick-btn').forEach(qBtn => {
+            qBtn.addEventListener('click', () => {
+              const inp = qBtn.parentElement.querySelector('input[data-pos]');
+              if (inp) { inp.value = qBtn.dataset.quick; recalc(); }
+            });
+          });
+          const saveBtn = block.querySelector('.bonus-save-btn');
+          if (saveBtn) saveBtn.addEventListener('click', () => adminSaveBonusScore(cfgId, block.dataset.uid, block, saveBtn));
+          const unBtn = block.querySelector('.bonus-unapprove-btn');
+          if (unBtn) unBtn.addEventListener('click', () => adminUnapproveBonus(cfgId, block.dataset.uid));
+        });
+      });
+    }
+
+    // Kullanıcının bonus puanlarını kaydet + onayla; toplam settings/bonus'a yazılır
+    // (mutlak değer — düzenlemede fark hesabı gerekmez).
+    async function adminSaveBonusScore(cfgId, uid, block, saveBtn) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin || !uid) return;
+
+      const awarded = {};
+      let sum = 0;
+      block.querySelectorAll('input[data-pos]').forEach(inp => {
+        const v = parseFloat(inp.value);
+        if (!isNaN(v) && v !== 0) { awarded[inp.dataset.pos] = v; sum += v; }
+      });
+      const extraRaw = parseFloat(block.querySelector('input[data-extra]')?.value);
+      const extra = !isNaN(extraRaw) ? extraRaw : 0;
+      const total = sum + extra;
+
+      if (saveBtn) saveBtn.disabled = true;
+      try {
+        const batch = db.batch();
+        // update(): awarded haritası olduğu gibi DEĞİŞTİRİLİR (set+merge eski
+        // puanları haritada bırakırdı; admin bir puanı silince kalıntı kalmasın).
+        batch.update(db.collection('bonus').doc(cfgId).collection('picks').doc(uid), {
+          awarded, extra, total,
+          approved: true,
+          scoredAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        batch.set(db.collection('settings').doc('bonus'), {
+          byTournament: { [cfg.tournament]: { [uid]: total } }
+        }, { merge: true });
+        await batch.commit();
+        const name = usersMap[uid]?.displayName || 'Kullanıcı';
+        showToast(`${name}: ${formatPoints(total)} bonus puan onaylandı ve puan durumuna eklendi.`, 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Puan kaydedilemedi.', 'error');
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    async function adminUnapproveBonus(cfgId, uid) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin || !uid) return;
+      try {
+        const batch = db.batch();
+        batch.set(db.collection('bonus').doc(cfgId).collection('picks').doc(uid), {
+          approved: false
+        }, { merge: true });
+        batch.set(db.collection('settings').doc('bonus'), {
+          byTournament: { [cfg.tournament]: { [uid]: firebase.firestore.FieldValue.delete() } }
+        }, { merge: true });
+        await batch.commit();
+        showToast('Onay kaldırıldı; puan durumundan çıkarıldı.', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Onay kaldırılamadı.', 'error');
+      }
     }
 
     // ================== ADMIN ==================
@@ -5344,6 +6075,7 @@
       if (view === 'museum') renderMuseum();
       if (view === 'admin' && isAdmin) {
         renderAdminMatches();
+        renderAdminBonus();
         renderAdminFutureFixtures();
         renderAdminUsers();
         renderWhitelist();

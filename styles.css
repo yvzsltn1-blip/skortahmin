@@ -5026,3 +5026,184 @@
       .score-row { gap: 7px; }
       .score-center { gap: 5px; }
     }
+
+    /* ================== SEZON BONUS TAHMİNLERİ ================== */
+    .bonus-banner {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      background: linear-gradient(135deg, rgba(232, 197, 71, 0.10), rgba(0, 230, 118, 0.06));
+      border: 1px solid rgba(232, 197, 71, 0.35);
+      border-radius: var(--radius-md);
+      padding: 0.9rem 1.1rem;
+      margin-bottom: 1.1rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .bonus-banner-info { flex: 1; min-width: 220px; }
+    .bonus-banner-title {
+      font-family: var(--font-heading);
+      font-weight: 800;
+      font-size: 0.95rem;
+      color: var(--accent-gold);
+    }
+    .bonus-banner-sub {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-top: 0.2rem;
+      line-height: 1.35;
+    }
+    .bonus-banner-status { font-size: 0.72rem; font-weight: 700; margin-top: 0.35rem; }
+    .bonus-banner-status.done { color: var(--accent); }
+    .bonus-banner-status.todo { color: var(--accent-gold); }
+    .bonus-banner-btn { width: auto; white-space: nowrap; }
+
+    /* Tahmin modalı satırları */
+    .bonus-pick-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.3rem 0;
+    }
+    .bonus-pos-label {
+      min-width: 74px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: var(--accent-gold);
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .bonus-pick-input { flex: 1; }
+
+    /* Arşiv üstü sabit tablo */
+    .bonus-pinned-card { margin-bottom: 1rem; border-color: rgba(232, 197, 71, 0.3); }
+    .bonus-pinned-body { padding-top: 0.5rem; }
+    .bonus-pinned-entry-btn { width: auto; margin-bottom: 0.6rem; }
+    .bonus-pinned-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      flex-wrap: wrap;
+      padding: 0.55rem 0.3rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .bonus-pinned-row:last-child { border-bottom: none; }
+    .bonus-pinned-row.is-me {
+      background: rgba(0, 230, 118, 0.05);
+      border-radius: var(--radius-sm);
+    }
+    .bonus-pinned-user {
+      min-width: 110px;
+      font-weight: 800;
+      font-size: 0.8rem;
+      color: var(--text-primary);
+    }
+    .bonus-pinned-picks {
+      flex: 1;
+      min-width: 200px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+    .bonus-pick-chip {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-full);
+      padding: 0.18rem 0.55rem;
+      white-space: nowrap;
+    }
+    .bonus-pick-chip.hit {
+      color: var(--accent);
+      border-color: rgba(0, 230, 118, 0.4);
+      background: rgba(0, 230, 118, 0.08);
+    }
+    .bonus-pick-chip.miss { opacity: 0.6; }
+    .bonus-pick-chip b { color: var(--accent); }
+    .bonus-pinned-total { margin-left: auto; }
+    .bonus-total-pill {
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: var(--accent-gold);
+      background: var(--accent-gold-glow);
+      border: 1px solid rgba(232, 197, 71, 0.35);
+      border-radius: var(--radius-full);
+      padding: 0.22rem 0.6rem;
+      white-space: nowrap;
+    }
+    .bonus-total-pill.pending {
+      color: var(--text-muted);
+      background: var(--bg-input);
+      border-color: var(--border-color);
+    }
+
+    /* Admin puanlama */
+    .bonus-admin-toggles { margin-bottom: 0.8rem; }
+    .bonus-admin-user {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 0.7rem 0.8rem;
+      margin-bottom: 0.7rem;
+      background: var(--bg-card);
+    }
+    .bonus-admin-user-head {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .bonus-approved-pill { color: var(--accent); border-color: rgba(0, 230, 118, 0.4); }
+    .bonus-pill-on { color: var(--accent); }
+    .bonus-score-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.2rem 0;
+    }
+    .bonus-score-team {
+      flex: 1;
+      font-size: 0.78rem;
+      color: var(--text-primary);
+      min-width: 90px;
+    }
+    .bonus-score-input { max-width: 90px; text-align: center; }
+    .bonus-quick-btn { width: auto; padding: 0.3rem 0.55rem; }
+    .bonus-extra-row { border-top: 1px dashed var(--border-color); margin-top: 0.4rem; padding-top: 0.5rem; }
+    .bonus-extra-row .bonus-score-team { color: var(--text-secondary); }
+    .bonus-admin-user-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-top: 0.6rem;
+    }
+    .bonus-admin-user-actions .btn { width: auto; }
+    .bonus-total-preview {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-right: auto;
+    }
+    .bonus-total-preview b { color: var(--accent-gold); font-size: 0.9rem; }
+    .bonus-delete-btn { color: var(--accent-red); }
+
+    @media (max-width: 560px) {
+      .bonus-banner { flex-direction: column; align-items: stretch; }
+      .bonus-banner-btn { width: 100%; }
+      .bonus-pinned-total { margin-left: 0; }
+    }
+
+    /* Bonus: takım listesi ipuçları */
+    .bonus-teams-hint {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+      margin-bottom: 0.6rem;
+    }
+    .bonus-teams-warn { color: var(--accent-gold); }
+    .bonus-pill-warn {
+      color: var(--accent-red);
+      border-color: rgba(255, 77, 94, 0.4);
+    }

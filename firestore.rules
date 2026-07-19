@@ -46,6 +46,33 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Sezon bonus tahminleri: config dokümanları admin tarafından yönetilir,
+    // kullanıcılar yalnızca giriş açıkken kendi tahmin dokümanlarını yazabilir.
+    match /bonus/{bonusId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+
+      match /picks/{pickUid} {
+        allow read: if signedIn();
+        allow create: if isAdmin()
+          || (
+            signedIn()
+            && request.auth.uid == pickUid
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.keys().hasOnly(['uid', 'name', 'picks', 'updatedAt'])
+            && get(/databases/$(database)/documents/bonus/$(bonusId)).data.open == true
+          );
+        allow update: if isAdmin()
+          || (
+            signedIn()
+            && request.auth.uid == pickUid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'picks', 'updatedAt'])
+            && get(/databases/$(database)/documents/bonus/$(bonusId)).data.open == true
+          );
+        allow delete: if isAdmin();
+      }
+    }
+
     match /notificationTokens/{tokenId} {
       allow read: if isAdmin();
       allow create, update: if signedIn()

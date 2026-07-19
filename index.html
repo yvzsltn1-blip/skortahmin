@@ -254,6 +254,9 @@
         </div>
       </div>
 
+      <!-- Sezon bonus tahmin banner'ı (giriş açık turnuvalar için JS doldurur) -->
+      <div id="bonus-entry-banner"></div>
+
       <div id="matches-list">
         <!-- Populated by JS -->
       </div>
@@ -437,6 +440,13 @@
         <strong>Turnuva filtresi:</strong> Puan durumu, form ve seri seçili turnuvaya göre hesaplanır.
       </div>
 
+      <div class="rules-note">
+        <strong>🎯 Sezon Bonus Tahmini:</strong> Admin bir turnuvaya bonus tahmin açarsa sezon başında
+        tahminini girersin (örn. ilk 6 + son 3 sıralaması ya da şampiyon). Sezon sonunda admin gerçek
+        sıralamaya göre puanları yazar ve onaylar; bu puanlar puan durumu toplamına eklenir.
+        Herkesin tahmini Arşiv sayfasının en üstünde görünür.
+      </div>
+
       <div class="rules-back-row">
         <button type="button" class="btn btn-primary" onclick="switchView('leaderboard')">Puan Durumuna dön</button>
         <button type="button" class="btn btn-secondary" onclick="switchView('matches')">Maçlara git</button>
@@ -454,6 +464,9 @@
           <select id="archive-tournament-filter" class="input-field tournament-filter" onchange="onArchiveFilterChange(this.value)"></select>
         </div>
       </div>
+
+      <!-- Sezon bonus tahminleri: admin sabitlediği sürece arşivin en üstünde -->
+      <div id="bonus-archive-pinned"></div>
 
       <!-- Hafta seçici: haftası girilmiş arşiv maçı varsa görünür -->
       <div id="archive-week-filter" class="tournament-tabs hidden" style="margin-bottom: 0.9rem;"></div>
@@ -633,6 +646,55 @@
         <div id="date-proposals-list" style="margin-top: 0.9rem;"></div>
       </div>
 
+      <!-- Season bonus predictions -->
+      <div class="admin-card">
+        <h3 class="admin-card-title">🎯 Sezon Bonus Tahminleri</h3>
+        <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          Bir turnuvaya sezon başı bonus tahmini aç: <strong>Sıralama</strong> türünde kullanıcılar ilk N + son M sırayı,
+          <strong>Şampiyon</strong> türünde sadece şampiyonu tahmin eder. Sezon sonunda her kullanıcının tahminine
+          puanları elle yazıp onaylarsın; onaylanan puanlar puan durumuna eklenir.
+        </p>
+        <div class="form-row">
+          <div class="form-col">
+            <label class="form-label">Turnuva</label>
+            <select id="bonus-new-tournament" class="input-field"></select>
+          </div>
+          <div class="form-col">
+            <label class="form-label">Tür</label>
+            <select id="bonus-new-mode" class="input-field" onchange="onBonusModeChange(this.value)">
+              <option value="ranking">Sıralama (ilk N + son M)</option>
+              <option value="champion">Sadece Şampiyon</option>
+            </select>
+          </div>
+        </div>
+        <div id="bonus-ranking-fields" class="form-row" style="margin-top: 0.5rem;">
+          <div class="form-col">
+            <label class="form-label">İlk kaç sıra?</label>
+            <input id="bonus-new-top" type="number" min="0" max="20" value="6" class="input-field">
+          </div>
+          <div class="form-col">
+            <label class="form-label">Son kaç sıra?</label>
+            <input id="bonus-new-bottom" type="number" min="0" max="20" value="3" class="input-field">
+          </div>
+          <div class="form-col">
+            <label class="form-label">Toplam takım</label>
+            <input id="bonus-new-total" type="number" min="2" max="40" value="18" class="input-field">
+          </div>
+          <div class="form-col">
+            <label class="form-label">Doğru sıra puanı</label>
+            <input id="bonus-new-ppc" type="number" min="1" max="100" value="10" class="input-field">
+          </div>
+        </div>
+        <div class="form-col" style="margin-top: 0.5rem;">
+          <label class="form-label">Açıklama (ops. — kullanıcılara gösterilir)</label>
+          <input id="bonus-new-desc" type="text" class="input-field" placeholder="Örn: Şampiyon tahmini — puanlar sezon başı oranlara göre verilecek">
+        </div>
+        <div class="admin-btn-group" style="margin-top: 0.75rem;">
+          <button onclick="createBonusConfig()" class="btn btn-primary">Bonus Tahmini Oluştur</button>
+        </div>
+        <div id="admin-bonus-list" style="margin-top: 1rem;"></div>
+      </div>
+
       <!-- Livescore manual sweep -->
       <div class="admin-card">
         <h3 class="admin-card-title">⚽ Skor Kontrolü</h3>
@@ -766,6 +828,24 @@
       <div class="modal-footer">
         <div id="breakdown-total"></div>
         <button onclick="closeBreakdownModal()" class="btn btn-secondary btn-sm">Kapat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sezon Bonus Tahmin Modalı -->
+  <div id="bonus-modal" class="modal-overlay hidden" onclick="if (event.target.id === 'bonus-modal') closeBonusModal()">
+    <div class="modal-card" onclick="event.stopImmediatePropagation()">
+      <div class="modal-header">
+        <div>
+          <h3 id="bonus-modal-title">Sezon Bonus Tahmini</h3>
+          <p id="bonus-modal-subtitle" class="modal-subtitle"></p>
+        </div>
+        <button onclick="closeBonusModal()" class="modal-close" aria-label="Kapat">×</button>
+      </div>
+      <div id="bonus-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <button onclick="closeBonusModal()" class="btn btn-secondary btn-sm">Vazgeç</button>
+        <button id="bonus-modal-save" onclick="saveBonusPicks()" class="btn btn-primary btn-sm">Tahmini Kaydet</button>
       </div>
     </div>
   </div>
