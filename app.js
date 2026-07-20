@@ -72,6 +72,10 @@
     let inactiveTournaments = [];        // yeni maç seçicisinde gösterilmeyen etiketler
     let defaultTournament = DEFAULT_TOURNAMENT; // adminin yeni maçlar için seçtiği kalıcı varsayılan
     let tournamentSettingsInitialized = false;
+    // Şampiyonluk kutlaması (settings/app.celebration): admin turnuva yöneticisinden
+    // yayınlar; ilk 3 gün her girişte, sonrasında görmemiş kullanıcıya 1 kez gösterilir.
+    let celebrationData = null;
+    let celebrationSessionShown = null;  // bu oturumda gösterilen kutlama id'si
     let activePredUnsubs = [];           // chunked predictions listeners (optimized mode)
     let activePredChunks = {};           // chunkIndex -> { matchId: predDoc } partial store
     let activePredKey = '';              // signature of the currently-subscribed active match id set
@@ -130,7 +134,13 @@
         scoreboard: Array.isArray(m.scoreboard) ? m.scoreboard : [],
         dt: m.datetime ? m.datetime.getTime() : null,
         fa: matchFinalizedAtMs(m),
-        wk: m.week != null ? m.week : null
+        wk: m.week != null ? m.week : null,
+        // Yaklaşma tavanı (%85) yeniden hesapta da uygulanabilsin diye oranlar saklanır
+        od: m.odds ? {
+          ms: m.odds.ms || null,
+          score: m.odds.score || null,
+          scoreEstimated: !!m.odds.scoreEstimated
+        } : null
       };
     }
 
@@ -148,7 +158,8 @@
         finalized: true,
         datetime: s.dt != null ? new Date(s.dt) : null,
         finalizedAtMs: s.fa || 0,
-        week: s.wk != null ? s.wk : null
+        week: s.wk != null ? s.wk : null,
+        odds: s.od || undefined
       };
     }
 
@@ -341,6 +352,48 @@
       })[char]);
     }
 
+    // ---- Yaklaşma tavanı ----
+    // 21 Temmuz 2026 ve sonrasında başlayan maçlarda yaklaşmanın yarım skor puanı,
+    // oyuncunun SÖYLEDİĞİ skorun kendi iddaa oranının %85'ini geçemez.
+    // Örn: 3-1 dedin (oranı 12.00), maç 4-1 bitti (oranı 50) → 50/2=25 değil en çok 12×0.85=10.2.
+    // Eski maçlara dokunulmaz; oran verisi yoksa tavan uygulanmaz (eski davranış).
+    const APPROX_CAP_RATIO = 0.85;
+    const APPROX_CAP_START_MS = Date.UTC(2026, 6, 20, 21, 0, 0); // 21 Tem 2026 00:00 (TR)
+
+    function approxHalfScorePts(match, ph, pa, sp) {
+      const half = sp / 2;
+      const dt = match && match.datetime;
+      const dtMs = dt instanceof Date ? dt.getTime()
+        : (dt && typeof dt.toMillis === 'function' ? dt.toMillis() : 0);
+      if (!dtMs || dtMs < APPROX_CAP_START_MS) return half;
+      const predOdd = scoreOddFor(match, ph, pa);
+      if (typeof predOdd !== 'number' || !(predOdd > 0)) return half;
+      return Math.min(half, predOdd * APPROX_CAP_RATIO);
+    }
+
+    // ---- Derbi ×2 ----
+    // Dört büyükler (GS/FB/TS/BJK) KENDİ ARALARINDA oynadığında tüm puanlar 2 katına
+    // çıkar: sonuç, tam skor, yaklaşma ve tek bilme bonusu (3→6). Saklanan
+    // outcomePoints/scorePoints ham oran kalır; çarpan puan hesabında uygulanır ve
+    // scoreboard/toplamlara ×2 olarak KAYDEDİLİR. (Tam skor tavanı 200 → fiilen 400.)
+    // Eski maçların puanları değişmesin diye yaklaşma tavanıyla aynı tarihten itibaren.
+    const DERBY_X2_START_MS = APPROX_CAP_START_MS;
+    const DERBY_TEAMS = ['galatasaray', 'fenerbahçe', 'fenerbahce', 'trabzonspor', 'beşiktaş', 'besiktas'];
+
+    function isDerbyTeam(name) {
+      const n = String(name || '').toLocaleLowerCase('tr');
+      return DERBY_TEAMS.some(t => n.includes(t));
+    }
+
+    function derbyMultiplier(match) {
+      if (!match) return 1;
+      const dt = match.datetime;
+      const dtMs = dt instanceof Date ? dt.getTime()
+        : (dt && typeof dt.toMillis === 'function' ? dt.toMillis() : 0);
+      if (!dtMs || dtMs < DERBY_X2_START_MS) return 1;
+      return isDerbyTeam(match.homeTeam) && isDerbyTeam(match.awayTeam) ? 2 : 1;
+    }
+
     // Auto-scoring based on the two per-match values the admin sets:
     //   match.outcomePoints  -> awarded for predicting the correct winner/draw
     //   match.scorePoints    -> awarded (in full / half) for getting the exact score / off-by-one
@@ -379,7 +432,8 @@
       } else if (diff === approxDiff) {
         // No half-point if someone already nailed the exact score for this match.
         const someoneExact = preds.some(q => q.homePred === ah && q.awayPred === aa);
-        pts = someoneExact ? op : (op + sp / 2);       // yaklaşma → outcome + half score (unless exact exists)
+        // yaklaşma → outcome + half score (unless exact exists); half score %85 tavanlı
+        pts = someoneExact ? op : (op + approxHalfScorePts(match, ph, pa, sp));
       } else {
         pts = op;                                      // outcome only
       }
@@ -389,7 +443,8 @@
         Math.sign(q.homePred - q.awayPred) === actOutcome).length;
       if (correctOutcomeCount === 1) pts += 3;
 
-      return pts;
+      // Derbi ×2: sonuç + skor/yaklaşma + tek bilme bonusu hepsi birden katlanır.
+      return pts * derbyMultiplier(match);
     }
 
     // Points may be fractional; show them cleanly (e.g. 1, 1.5, 2.25).
@@ -432,25 +487,27 @@
       const correctOutcomeCount = preds.filter(q =>
         Math.sign(Number(q.homePred) - Number(q.awayPred)) === actOutcome).length;
 
+      const mult = derbyMultiplier(match);
       parts.outcomeHit = true;
-      parts.outcomePoints = op;
+      parts.outcomePoints = op * mult;
 
       if (diff === 0) {
         parts.kind = 'exact';
         parts.exactHit = true;
-        parts.exactPoints = sp;
+        parts.exactPoints = sp * mult;
       } else if (diff === approxDiff) {
         parts.kind = 'approx';
         parts.approxHit = true;
         parts.approxAwarded = !someoneExact;
         parts.approxBlocked = someoneExact;
-        parts.approxPoints = someoneExact ? 0 : sp / 2;
-        parts.approxBlockedPoints = someoneExact ? sp / 2 : 0;
+        const halfSp = approxHalfScorePts(match, ph, pa, sp) * mult;
+        parts.approxPoints = someoneExact ? 0 : halfSp;
+        parts.approxBlockedPoints = someoneExact ? halfSp : 0;
       } else {
         parts.kind = 'outcome';
       }
 
-      if (correctOutcomeCount === 1) parts.bonusPoints = 3;
+      if (correctOutcomeCount === 1) parts.bonusPoints = 3 * mult;
       parts.totalPoints = parts.outcomePoints + parts.exactPoints + parts.approxPoints + parts.bonusPoints;
       return parts;
     }
@@ -844,7 +901,8 @@
         return;
       }
       const odd = scoreOddFor(match, h, a);
-      el.textContent = odd ? `${h}-${a} skorunun iddaa oranı: ${formatScoreOdd(match, odd)}` : '';
+      const derbyNote = derbyMultiplier(match) === 2 ? ' • 🔥 derbi: puanlar ×2!' : '';
+      el.textContent = odd ? `${h}-${a} skorunun iddaa oranı: ${formatScoreOdd(match, odd)}${derbyNote}` : '';
     }
 
     function renderAll() {
@@ -881,7 +939,10 @@
     // Bir maç kartı için turnuva rozeti HTML'i (aksan noktası CSS ::before ile gelir)
     function tournamentBadge(match) {
       const t = tournamentOf(match);
-      return `<span class="tournament-badge">${escapeHTML(t)}</span>`;
+      const derby = derbyMultiplier(match) === 2
+        ? `<span class="derby-badge" title="Dört büyükler derbisi: sonuç, tam skor, yaklaşma ve tek bilme puanları 2 katı!">🔥 DERBİ — PUANLAR ×2</span>`
+        : '';
+      return `<span class="tournament-badge">${escapeHTML(t)}</span>${derby}`;
     }
 
     // Tüm turnuva <select> ve filtre menülerini güncel listeyle doldurur.
@@ -937,7 +998,18 @@
         if (b === defaultTournament) return 1;
         return a.localeCompare(b, 'tr');
       });
-      container.innerHTML = sorted.map(t => {
+      const celebBanner = celebrationData ? `
+        <div class="tournament-manager-row celebration-active-row">
+          <div class="tournament-manager-info">
+            <span class="tournament-manager-name">🏆 Aktif kutlama: ${escapeHTML(celebrationData.tournament || '')}</span>
+            <span class="tournament-manager-status is-default">Şampiyon: ${escapeHTML(celebrationData.championName || '')}</span>
+          </div>
+          <div class="tournament-manager-actions">
+            <button type="button" class="btn btn-secondary js-end-celebration">Kutlamayı Bitir</button>
+          </div>
+        </div>` : '';
+
+      container.innerHTML = celebBanner + sorted.map(t => {
         const isInactive = inactive.has(t);
         const isDefault = t === defaultTournament;
         const status = isInactive ? 'Pasif (arşive kalktı)' : (isDefault ? 'Aktif • Varsayılan' : 'Aktif');
@@ -951,6 +1023,7 @@
             <div class="tournament-manager-actions">
               ${!isInactive && !isDefault ? `<button type="button" class="btn btn-secondary js-default-tournament" data-tournament="${escapeHTML(t)}">Varsayılan Yap</button>` : ''}
               <button type="button" class="btn btn-secondary js-toggle-tournament" data-tournament="${escapeHTML(t)}">${isInactive ? 'Aktif Et' : 'Pasife Al'}</button>
+              <button type="button" class="btn btn-secondary js-celebrate-tournament" data-tournament="${escapeHTML(t)}" title="Turnuva şampiyonunu tüm kullanıcılara kutlama olarak duyur">🏆 Şampiyonu Kutla</button>
             </div>
           </div>`;
       }).join('');
@@ -961,6 +1034,157 @@
       container.querySelectorAll('.js-toggle-tournament').forEach(button => {
         button.addEventListener('click', () => toggleTournamentTag(button.dataset.tournament));
       });
+      container.querySelectorAll('.js-celebrate-tournament').forEach(button => {
+        button.addEventListener('click', () => celebrateTournamentChampion(button.dataset.tournament));
+      });
+      const endBtn = container.querySelector('.js-end-celebration');
+      if (endBtn) endBtn.addEventListener('click', endTournamentCelebration);
+    }
+
+    // ================== ŞAMPİYONLUK KUTLAMASI ==================
+    // Turnuva bitince admin "Şampiyonu Kutla" der; settings/app.celebration yazılır.
+    // İlk 3 gün: her girişte gösterilir. 3 günden sonra: yalnızca hiç görmemiş
+    // kullanıcıya 1 kez gösterilir (users/{uid}.seenCelebrations[id] bayrağı).
+    const CELEBRATION_FRESH_MS = 3 * 24 * 60 * 60 * 1000;
+
+    function maybeShowCelebration() {
+      const c = celebrationData;
+      if (!c || !c.id || !c.championName || !currentUser) return;
+      if (celebrationSessionShown === c.id) return; // oturum başına 1 kez
+      const seen = !!(currentUserProfile && currentUserProfile.seenCelebrations && currentUserProfile.seenCelebrations[c.id]);
+      const fresh = (Date.now() - (c.startedAt || 0)) < CELEBRATION_FRESH_MS;
+      if (!fresh && seen) return;
+      celebrationSessionShown = c.id;
+      showCelebrationOverlay(c);
+      if (!seen) {
+        currentUserProfile.seenCelebrations = { ...(currentUserProfile.seenCelebrations || {}), [c.id]: true };
+        db.collection('users').doc(currentUser.uid)
+          .set({ seenCelebrations: { [c.id]: true } }, { merge: true })
+          .catch(e => console.error('Celebration seen flag write error', e));
+      }
+    }
+
+    // Turnuva etiketinden kupa görseli tahmini (Kupa Müzesi görselleriyle aynı set)
+    function celebrationCupImg(tournament) {
+      const t = String(tournament || '').toLocaleLowerCase('tr');
+      if (/dünya|world/.test(t)) return 'kupa/world.webp';
+      if (/şampiyonlar|champions/.test(t)) return 'kupa/sampiyonlar.webp';
+      if (/avrupa ligi|europa|uefa/.test(t)) return 'kupa/avrupa.webp';
+      if (/euro|avrupa şampiyonası/.test(t)) return 'kupa/eurocup.webp';
+      if (/süper/.test(t)) return 'kupa/superlig.webp';
+      if (/türkiye/.test(t)) return 'kupa/turkiye.webp';
+      return null;
+    }
+
+    function showCelebrationOverlay(c) {
+      const overlay = document.getElementById('celebration-overlay');
+      if (!overlay) return;
+
+      const img = celebrationCupImg(c.tournament);
+      document.getElementById('celebration-cup').innerHTML = img
+        ? `<img src="${img}" alt="Kupa" onerror="this.parentNode.textContent='🏆'">`
+        : '🏆';
+      document.getElementById('celebration-champion').textContent = c.championName || '';
+      document.getElementById('celebration-tournament').textContent = c.tournament || '';
+      document.getElementById('celebration-points').textContent =
+        c.points != null ? `${formatPoints(c.points)} puanla zirvede` : '';
+
+      // Konfeti parçaları
+      const confetti = document.getElementById('celebration-confetti');
+      confetti.innerHTML = '';
+      const colors = ['#E8C547', '#00E676', '#3B82F6', '#FF4D5E', '#F1F3F8', '#FF9F1C'];
+      for (let i = 0; i < 120; i++) {
+        const p = document.createElement('span');
+        p.className = 'confetti-piece';
+        p.style.left = `${Math.random() * 100}%`;
+        p.style.background = colors[Math.floor(Math.random() * colors.length)];
+        p.style.animationDelay = `${Math.random() * 4}s`;
+        p.style.animationDuration = `${2.6 + Math.random() * 2.4}s`;
+        p.style.width = `${6 + Math.random() * 6}px`;
+        p.style.height = `${10 + Math.random() * 8}px`;
+        if (Math.random() < 0.35) p.style.borderRadius = '50%';
+        confetti.appendChild(p);
+      }
+
+      overlay.classList.remove('hidden');
+      document.body.classList.add('celebration-open');
+    }
+
+    function closeCelebration() {
+      const overlay = document.getElementById('celebration-overlay');
+      if (!overlay) return;
+      overlay.classList.add('hidden');
+      document.body.classList.remove('celebration-open');
+      const confetti = document.getElementById('celebration-confetti');
+      if (confetti) confetti.innerHTML = '';
+    }
+
+    // Turnuvanın güncel puan haritası (leaderboard + onaylı bonus puanları)
+    function tournamentPointsMap(t) {
+      const pointsMap = {};
+      if (optimizedMode) {
+        Object.entries(leaderboardTotalsByTournament[t] || {}).forEach(([uid, v]) => {
+          pointsMap[uid] = (pointsMap[uid] || 0) + (Number(v) || 0);
+        });
+      } else {
+        const matchById = Object.fromEntries(matches.map(m => [m.id, m]));
+        allPredictions.forEach(p => {
+          const match = matchById[p.matchId];
+          if (!match || tournamentOf(match) !== t) return;
+          const pts = autoPointsFor(p, match);
+          if (pts == null) return;
+          pointsMap[p.uid] = (pointsMap[p.uid] || 0) + pts;
+        });
+      }
+      Object.entries((bonusTotalsByTournament || {})[t] || {}).forEach(([uid, v]) => {
+        const n = Number(v) || 0;
+        if (n) pointsMap[uid] = (pointsMap[uid] || 0) + n;
+      });
+      return pointsMap;
+    }
+
+    async function celebrateTournamentChampion(t) {
+      if (!isAdmin || !t) return;
+      const pointsMap = tournamentPointsMap(t);
+      const entries = Object.entries(pointsMap).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) { showToast('Bu turnuvada hiç puan bulunamadı.', 'warning'); return; }
+      const topPts = entries[0][1];
+      // Beraberlik varsa tüm zirvedekiler birlikte kutlanır
+      const champs = entries.filter(([, pts]) => pts === topPts).map(([uid]) => {
+        const profile = usersMap[uid] || {};
+        return { uid, name: profile.displayName || profile.email || 'Bilinmeyen' };
+      });
+      const championName = champs.map(x => x.name).join(' & ');
+      if (!confirm(`"${t}" şampiyonu ${championName} (${formatPoints(topPts)} puan) ilan edilecek.\nTüm kullanıcılar girişte kutlama görecek. Devam edilsin mi?`)) return;
+      const celebration = {
+        id: `celeb_${Date.now()}`,
+        tournament: t,
+        championUid: champs[0].uid,
+        championName,
+        points: topPts,
+        startedAt: Date.now()
+      };
+      try {
+        await db.collection('settings').doc('app').set({ celebration }, { merge: true });
+        showToast('Şampiyonluk kutlaması yayınlandı! 🏆', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Kutlama yayınlanamadı: ' + e.message, 'error');
+      }
+    }
+
+    async function endTournamentCelebration() {
+      if (!isAdmin || !celebrationData) return;
+      if (!confirm(`"${celebrationData.tournament}" kutlaması kaldırılacak. Henüz görmemiş kullanıcılar da artık görmeyecek. Emin misin?`)) return;
+      try {
+        await db.collection('settings').doc('app').update({
+          celebration: firebase.firestore.FieldValue.delete()
+        });
+        showToast('Kutlama sonlandırıldı.', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Kutlama kaldırılamadı: ' + e.message, 'error');
+      }
     }
 
     function onSelectAddTournament(value) { selectedTournament = value; }
@@ -1149,6 +1373,7 @@
       unsubscribeSettings = db.collection('settings').doc('app').onSnapshot(doc => {
         const data = doc.exists ? doc.data() : {};
         allowedEmails = data.allowedEmails || [];
+        celebrationData = data.celebration || null;
         const list = Array.isArray(data.tournaments) ? data.tournaments.filter(Boolean) : [];
         inactiveTournaments = Array.isArray(data.inactiveTournaments) ? data.inactiveTournaments.filter(Boolean) : [];
         // DEFAULT_TOURNAMENT her zaman listede bulunsun
@@ -1171,6 +1396,7 @@
         tournamentSettingsInitialized = true;
         refreshTournamentUI();
         if (isAdmin) renderWhitelist();
+        maybeShowCelebration();
       });
 
       // --- Sezon bonus tahminleri (küçük koleksiyon + tek toplam dokümanı; her iki modda da) ---
@@ -3485,10 +3711,63 @@
       return key === 'champion' ? 'Şampiyon' : `${key}.`;
     }
 
+    // Puan sabitleri (eski config'lerde pointsPerGroup olmayabilir → varsayılan 8)
+    function bonusPpc(cfg) {
+      const v = Number(cfg && cfg.pointsPerCorrect);
+      return isFinite(v) && v > 0 ? v : 10;
+    }
+    function bonusPpg(cfg) {
+      const v = Number(cfg && cfg.pointsPerGroup);
+      return isFinite(v) && v >= 0 ? v : 8;
+    }
+
     function bonusModeText(cfg) {
       return cfg.mode === 'champion'
         ? 'Şampiyon tahmini'
-        : `İlk ${cfg.topCount || 6} + Son ${cfg.bottomCount || 3} sıralama tahmini (doğru sıra +${cfg.pointsPerCorrect || 10} puan)`;
+        : `İlk ${cfg.topCount || 6} + Son ${cfg.bottomCount || 3} sıralama tahmini (tam sıra +${formatPoints(bonusPpc(cfg))}, grup isabeti +${formatPoints(bonusPpg(cfg))})`;
+    }
+
+    // Kullanıcıya gösterilen puanlama özeti: kompakt puan kartları + katlanabilir detay
+    function bonusRulesHTML(cfg) {
+      if (!cfg || cfg.mode === 'champion') return '';
+      const top = cfg.topCount || 6;
+      const bottom = cfg.bottomCount || 3;
+      const ppc = bonusPpc(cfg);
+      const ppg = bonusPpg(cfg);
+      return `
+        <div class="bonus-chip-row">
+          <div class="bonus-chip">
+            <span class="bonus-chip-icon">🎯</span>
+            <span class="bonus-chip-val">+${formatPoints(ppc)}</span>
+            <span class="bonus-chip-label">Tam sıra</span>
+          </div>
+          <div class="bonus-chip">
+            <span class="bonus-chip-icon">📦</span>
+            <span class="bonus-chip-val">+${formatPoints(ppg)}</span>
+            <span class="bonus-chip-label">Grup isabeti</span>
+          </div>
+          <div class="bonus-chip gold">
+            <span class="bonus-chip-icon">✨</span>
+            <span class="bonus-chip-val">+${formatPoints(ppc + ppg)}</span>
+            <span class="bonus-chip-label">İkisi birden</span>
+          </div>
+        </div>
+        <details class="bonus-rules">
+          <summary class="bonus-rules-title">📖 Puanlama nasıl işliyor?</summary>
+          <div class="bonus-rules-body">
+            <ul>
+              <li>🎯 <b>Tam isabet:</b> Bir takımın bitiş sırasını birebir bilirsen <b>+${formatPoints(ppc)} puan</b>.</li>
+              <li>📦 <b>Grup isabeti:</b> İlk ${top} tahminine yazdığın bir takım, sırası tutmasa bile sezonu ilk ${top} içinde bitirirse takım başına <b>+${formatPoints(ppg)} puan</b>. Aynı kural son ${bottom} için de geçerli.</li>
+              <li>✨ <b>İkisi birden toplanır:</b> Sırayı birebir bilmek hem tam isabet hem grup isabeti sayılır → o takımdan <b>+${formatPoints(ppc + ppg)} puan</b>.</li>
+            </ul>
+            <div class="bonus-rules-example">
+              Örnek: 5.'liğe yazdığın takım sezonu 5. bitirdi → +${formatPoints(ppc + ppg)}.
+              1.'liğe yazdığın takım 2. bitirdi → +${formatPoints(ppg)}.
+              İlk ${top} tahminindeki takım sezonu ${top + 1}. veya daha aşağıda bitirdi → 0.
+            </div>
+            <div class="bonus-rules-note">Giriş açık olduğu sürece tahminini dilediğin kadar düzenleyebilirsin; admin girişi kapatınca tahminler kilitlenir. Sezon sonunda admin gerçek sıralamayı girer; tüm puanlar bu kurallara göre otomatik hesaplanır.</div>
+          </div>
+        </details>`;
     }
 
     // Turnuvada geçen takım adları — bellekteki maçlardan toplanır (yedek yöntem;
@@ -3624,7 +3903,10 @@
 
       bonusModalCfgId = cfg.id;
       titleEl.textContent = `🎯 ${cfg.tournament} — Sezon Bonus Tahmini`;
-      subEl.textContent = bonusModeText(cfg) + (cfg.desc ? ` • ${cfg.desc}` : '');
+      // Puan detayları artık gövdedeki kartlarda; alt başlıkta kısa metin yeter.
+      subEl.textContent = cfg.mode === 'champion'
+        ? (cfg.desc || 'Şampiyonu tahmin et.')
+        : `Sıralamayı tahmin et — puanlar sezon sonunda otomatik hesaplanır.`;
 
       // Mevcut tahmin yüklenmeden boş form gösterme (yanlışlıkla üzerine yazılmasın)
       if (bonusMyPicks[cfg.id] === undefined) {
@@ -3641,16 +3923,41 @@
         ? `<datalist id="bonus-team-datalist">${teams.map(t => `<option value="${escapeHTML(t)}">`).join('')}</datalist>`
         : '';
       const hint = teams.length
-        ? `<div class="bonus-teams-hint">Yazmaya başla, listeden seç — yalnızca bu turnuvanın ${teams.length} takımı seçilebilir.</div>`
+        ? `<div class="bonus-teams-hint">✏️ Yazmaya başla, listeden seç — yalnızca bu turnuvanın ${teams.length} takımı seçilebilir.</div>`
         : '';
 
-      body.innerHTML = datalist + hint + positions.map(pos => `
+      const rowHTML = (pos, cls) => `
         <div class="bonus-pick-row">
-          <label class="bonus-pos-label">${bonusPositionLabel(pos)}</label>
+          <span class="bonus-pos-num ${cls}">${pos === 'champion' ? '👑' : escapeHTML(pos)}</span>
           <input type="text" class="input-field bonus-pick-input" data-pos="${pos}"
                  ${teams.length ? 'list="bonus-team-datalist"' : ''}
                  autocomplete="off" placeholder="Takım adı yaz / seç" value="${escapeHTML(picks[pos] || '')}">
-        </div>`).join('');
+        </div>`;
+
+      let formHTML;
+      if (cfg.mode === 'champion') {
+        formHTML = `
+          <div class="bonus-pick-section">
+            <div class="bonus-pick-section-head head-top">👑 Şampiyon<span>sezonu kim zirvede bitirir?</span></div>
+            ${rowHTML('champion', 'top')}
+          </div>`;
+      } else {
+        const topN = Number(cfg.topCount) || 6;
+        const topRows = positions.filter(p => Number(p) <= topN);
+        const bottomRows = positions.filter(p => Number(p) > topN);
+        formHTML = `
+          <div class="bonus-pick-section">
+            <div class="bonus-pick-section-head head-top">🏆 İlk ${topRows.length}<span>zirveyi sırala</span></div>
+            ${topRows.map(p => rowHTML(p, 'top')).join('')}
+          </div>
+          ${bottomRows.length ? `
+          <div class="bonus-pick-section">
+            <div class="bonus-pick-section-head head-bottom">🔻 Son ${bottomRows.length}<span>alt sıraları sırala</span></div>
+            ${bottomRows.map(p => rowHTML(p, 'bottom')).join('')}
+          </div>` : ''}`;
+      }
+
+      body.innerHTML = bonusRulesHTML(cfg) + datalist + hint + formHTML;
 
       modal.classList.remove('hidden');
     }
@@ -3792,6 +4099,7 @@
               </span>
             </summary>
             <div class="admin-day-body bonus-pinned-body">
+              ${bonusRulesHTML(cfg)}
               ${entryBtn}
               ${rowsHTML}
             </div>
@@ -3834,6 +4142,8 @@
         cfg.bottomCount = parseInt(document.getElementById('bonus-new-bottom')?.value, 10) || 3;
         cfg.totalTeams = parseInt(document.getElementById('bonus-new-total')?.value, 10) || 18;
         cfg.pointsPerCorrect = parseFloat(document.getElementById('bonus-new-ppc')?.value) || 10;
+        const ppgRaw = parseFloat(document.getElementById('bonus-new-ppg')?.value);
+        cfg.pointsPerGroup = !isNaN(ppgRaw) && ppgRaw >= 0 ? ppgRaw : 8;
       }
 
       try {
@@ -3990,6 +4300,45 @@
           }).join('');
         }
 
+        // ---- Sezon sonu: gerçek sıralama girişi + otomatik puanlama (ranking modu) ----
+        let autoHTML = '';
+        if (cfg.mode !== 'champion') {
+          const teamsList = cfg.teams || [];
+          const dlId = `bonus-actual-dl-${cfg.id}`;
+          const actualDatalist = teamsList.length
+            ? `<datalist id="${escapeHTML(dlId)}">${teamsList.map(t => `<option value="${escapeHTML(t)}">`).join('')}</datalist>`
+            : '';
+          const actualRows = positions.map(pos => `
+            <div class="bonus-score-row">
+              <span class="bonus-pos-label">${bonusPositionLabel(pos)}</span>
+              <input type="text" class="input-field bonus-actual-input" data-actual="${pos}"
+                     ${teamsList.length ? `list="${escapeHTML(dlId)}"` : ''}
+                     autocomplete="off" placeholder="Gerçekte ${bonusPositionLabel(pos)} bitiren takım"
+                     value="${escapeHTML((cfg.actual || {})[pos] || '')}">
+            </div>`).join('');
+          autoHTML = `
+            <div class="bonus-actual-box">
+              <div class="bonus-actual-title">🏁 Sezon Sonu: Gerçek Sıralama → Otomatik Puanlama</div>
+              <div class="bonus-teams-hint">Gerçek bitiş sıralamasını gir, "Hesapla" de: tüm kullanıcıların puanları otomatik hesaplanıp ONAYLANIR.
+                Tam sıra bilene +tam sıra puanı, sırası tutmasa da takımı doğru grupta (ilk ${cfg.topCount || 6} / son ${cfg.bottomCount || 3}) bilene takım başına +grup puanı; tam sıra bilene ikisi birden verilir.</div>
+              ${actualDatalist}
+              ${actualRows}
+              <div class="bonus-score-row">
+                <span class="bonus-pos-label">⚙️</span>
+                <span class="bonus-score-team">Tam sıra puanı</span>
+                <input type="number" step="0.5" min="0" class="input-field bonus-score-input" data-auto-ppc value="${escapeHTML(String(bonusPpc(cfg)))}">
+              </div>
+              <div class="bonus-score-row">
+                <span class="bonus-pos-label">⚙️</span>
+                <span class="bonus-score-team">Grup isabet puanı</span>
+                <input type="number" step="0.5" min="0" class="input-field bonus-score-input" data-auto-ppg value="${escapeHTML(String(bonusPpg(cfg)))}">
+              </div>
+              <div class="admin-btn-group" style="margin-top: 0.5rem;">
+                <button type="button" class="btn btn-primary btn-sm" data-act="auto-score">🧮 Puanları Hesapla ve Onayla</button>
+              </div>
+            </div>`;
+        }
+
         return `
           <details class="admin-day-group bonus-admin-card" data-bonus-id="${escapeHTML(cfg.id)}" ${adminBonusOpenSet.has(cfg.id) ? 'open' : ''}>
             <summary class="admin-day-summary">
@@ -4012,6 +4361,7 @@
               ${(cfg.teams || []).length
                 ? `<div class="bonus-teams-hint">Seçilebilir takımlar (${cfg.teams.length}): ${cfg.teams.map(t => escapeHTML(t)).join(' · ')}</div>`
                 : `<div class="bonus-teams-hint bonus-teams-warn">⚠️ Takım listesi boş — kullanıcılar serbest yazacak. Fikstürü ekledikten sonra "Takımları Yenile"ye bas.</div>`}
+              ${autoHTML}
               ${usersHTML}
             </div>
           </details>`;
@@ -4030,6 +4380,7 @@
             else if (act === 'toggle-pin') toggleBonusField(cfgId, 'pinned');
             else if (act === 'refresh-teams') refreshBonusTeams(cfgId);
             else if (act === 'delete') deleteBonusConfig(cfgId);
+            else if (act === 'auto-score') adminAutoScoreBonus(cfgId, card, btn);
           });
         });
         card.querySelectorAll('.bonus-admin-user').forEach(block => {
@@ -4056,6 +4407,123 @@
           if (unBtn) unBtn.addEventListener('click', () => adminUnapproveBonus(cfgId, block.dataset.uid));
         });
       });
+    }
+
+    // ---------- Sezon sonu otomatik puanlama ----------
+    function bonusNormTeam(s) {
+      return String(s || '').trim().toLocaleLowerCase('tr');
+    }
+
+    // Bir kullanıcının tahminini gerçek sıralamayla karşılaştırıp sıra→puan haritası döner.
+    //   Tam isabet (sırayı birebir bilme)          → +ppc
+    //   Grup isabeti (takım doğru grupta bitirdi)  → +ppg (tam isabette İKİSİ birden verilir)
+    // Grup = tahmin edilen sıranın ait olduğu bölge: ilk topCount ya da son bottomCount.
+    function computeBonusAutoAwarded(cfg, picks, actual, ppc, ppg) {
+      const positions = bonusPositionsFor(cfg);
+      const total = Number(cfg.totalTeams) || 18;
+      const top = Math.min(Number(cfg.topCount) || 0, total);
+      const topSet = new Set(), bottomSet = new Set();
+      positions.forEach(pos => {
+        const t = actual[pos];
+        if (!t) return;
+        (Number(pos) <= top ? topSet : bottomSet).add(bonusNormTeam(t));
+      });
+      const awarded = {};
+      positions.forEach(pos => {
+        const team = (picks || {})[pos];
+        if (!team) return;
+        let pts = 0;
+        if (actual[pos] && bonusNormTeam(actual[pos]) === bonusNormTeam(team)) pts += ppc;
+        if ((Number(pos) <= top ? topSet : bottomSet).has(bonusNormTeam(team))) pts += ppg;
+        if (pts) awarded[pos] = pts;
+      });
+      return awarded;
+    }
+
+    // Admin gerçek sıralamayı girer; TÜM kullanıcıların puanları hesaplanır, onaylanır
+    // ve settings/bonus üzerinden puan durumuna eklenir. Giriş otomatik kapatılır.
+    async function adminAutoScoreBonus(cfgId, card, btn) {
+      const cfg = bonusConfigs.find(c => c.id === cfgId);
+      if (!cfg || !isAdmin || cfg.mode === 'champion') return;
+      const cache = bonusPicksCache[cfgId];
+      const docs = cache && Array.isArray(cache.docs) ? cache.docs : null;
+      if (docs === null) { showToast('Tahminler henüz yükleniyor, birazdan tekrar dene.', 'warning'); return; }
+
+      const positions = bonusPositionsFor(cfg);
+      const actual = {};
+      let missing = false;
+      card.querySelectorAll('input[data-actual]').forEach(inp => {
+        const v = inp.value.trim();
+        if (!v) missing = true; else actual[inp.dataset.actual] = v;
+      });
+      if (missing) { showToast('Gerçek sıralamada boş satır var — tüm sıraları doldur.', 'error'); return; }
+
+      // Takım adlarını turnuva listesindeki kanonik yazıma çevir
+      const teams = bonusTeamsOf(cfg);
+      if (teams.length) {
+        const canonical = {};
+        teams.forEach(t => { canonical[bonusNormTeam(t)] = t; });
+        const invalid = [];
+        positions.forEach(pos => {
+          const c = canonical[bonusNormTeam(actual[pos])];
+          if (c) actual[pos] = c; else invalid.push(actual[pos]);
+        });
+        if (invalid.length) {
+          showToast(`Bu takım(lar) turnuva listesinde yok: ${invalid.join(', ')}. Listeden seç.`, 'error');
+          return;
+        }
+      }
+      const vals = positions.map(pos => bonusNormTeam(actual[pos]));
+      if (new Set(vals).size !== vals.length) {
+        showToast('Gerçek sıralamada aynı takım birden fazla sıraya yazılmış.', 'error');
+        return;
+      }
+
+      const ppcRaw = parseFloat(card.querySelector('input[data-auto-ppc]')?.value);
+      const ppgRaw = parseFloat(card.querySelector('input[data-auto-ppg]')?.value);
+      const ppc = !isNaN(ppcRaw) && ppcRaw > 0 ? ppcRaw : bonusPpc(cfg);
+      const ppg = !isNaN(ppgRaw) && ppgRaw >= 0 ? ppgRaw : bonusPpg(cfg);
+
+      if (!confirm(`${cfg.tournament}: gerçek sıralama kaydedilecek, ${docs.length} kullanıcının bonus puanı otomatik hesaplanıp ONAYLANACAK.\nTam sıra +${formatPoints(ppc)}, grup isabeti +${formatPoints(ppg)} (tam sıraya ikisi birden).\nDevam edilsin mi?`)) return;
+
+      if (btn) btn.disabled = true;
+      try {
+        const batch = db.batch();
+        batch.set(db.collection('bonus').doc(cfgId), {
+          actual,
+          pointsPerCorrect: ppc,
+          pointsPerGroup: ppg,
+          open: false,
+          scoredAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        const totalsPatch = {};
+        docs.forEach(pick => {
+          const awarded = computeBonusAutoAwarded(cfg, pick.picks, actual, ppc, ppg);
+          const sum = Object.values(awarded).reduce((a, b) => a + b, 0);
+          const extra = Number(pick.extra) || 0;
+          const totalPts = sum + extra;
+          batch.update(db.collection('bonus').doc(cfgId).collection('picks').doc(pick.uid), {
+            awarded, extra, total: totalPts,
+            approved: true,
+            scoredAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          totalsPatch[pick.uid] = totalPts;
+        });
+        if (Object.keys(totalsPatch).length) {
+          batch.set(db.collection('settings').doc('bonus'), {
+            byTournament: { [cfg.tournament]: totalsPatch }
+          }, { merge: true });
+        }
+        await batch.commit();
+        showToast(`Gerçek sıralama kaydedildi; ${docs.length} kullanıcının bonus puanı hesaplanıp onaylandı. 🏁`, 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Otomatik puanlama başarısız: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     // Kullanıcının bonus puanlarını kaydet + onayla; toplam settings/bonus'a yazılır
@@ -4326,6 +4794,7 @@
               <span class="admin-match-date">${formatted}</span>
               ${tournamentBadge(match)}
               ${match.week ? `<span class="admin-mini-pill">${match.week}. Hafta</span>` : ''}
+              ${derbyMultiplier(match) === 2 ? `<span class="admin-mini-pill warn" title="Puan alanlarına ham oranı gir; ×2 çarpanı puan hesabında otomatik uygulanır">🔥 Derbi ×2 (otomatik)</span>` : ''}
               ${match.postponed ? `<span class="admin-mini-pill warn">Ertelendi</span>` : (match.dateTbd ? `<span class="admin-mini-pill warn">tarih onay bekliyor</span>` : '')}
               ${hasResult ? `<span class="admin-mini-pill">sonuç girildi</span>` : ''}
               ${missingCount ? `<span class="admin-mini-pill warn">${missingCount} eksik tahmin</span>` : `<span class="admin-mini-pill">tahminler tam</span>`}
@@ -6201,6 +6670,8 @@
           currentUser = null;
           currentUserProfile = null;
           isAdmin = false;
+          celebrationSessionShown = null;
+          closeCelebration();
           hideApp();
         }
       });

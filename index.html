@@ -684,6 +684,10 @@
             <label class="form-label">Doğru sıra puanı</label>
             <input id="bonus-new-ppc" type="number" min="1" max="100" value="10" class="input-field">
           </div>
+          <div class="form-col">
+            <label class="form-label">Grup isabet puanı</label>
+            <input id="bonus-new-ppg" type="number" min="0" max="100" value="8" class="input-field" title="Sırası tutmasa da takımı doğru grupta (ilk N / son M) bilene takım başına verilen puan">
+          </div>
         </div>
         <div class="form-col" style="margin-top: 0.5rem;">
           <label class="form-label">Açıklama (ops. — kullanıcılara gösterilir)</label>
@@ -801,6 +805,20 @@
 
       <div id="museum-rank" class="museum-rank-card"></div>
       <div id="museum-cabinets" class="museum-cabinets"></div>
+    </div>
+  </div>
+
+  <!-- Şampiyonluk Kutlama Overlay -->
+  <div id="celebration-overlay" class="celebration-overlay hidden" onclick="closeCelebration()">
+    <div id="celebration-confetti" class="celebration-confetti" aria-hidden="true"></div>
+    <div class="celebration-card" onclick="event.stopImmediatePropagation()">
+      <div class="celebration-rays" aria-hidden="true"></div>
+      <div id="celebration-cup" class="celebration-cup">🏆</div>
+      <div class="celebration-title">ŞAMPİYON</div>
+      <div id="celebration-champion" class="celebration-champion"></div>
+      <div id="celebration-tournament" class="celebration-tournament"></div>
+      <div id="celebration-points" class="celebration-points"></div>
+      <button type="button" class="btn btn-primary celebration-close" onclick="closeCelebration()">Tebrikler! 🎉</button>
     </div>
   </div>
 

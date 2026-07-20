@@ -661,6 +661,52 @@ function finalScoreOf(entry) {
   return null;
 }
 
+// ---- Yaklaşma tavanı: app.js ile birebir aynı kural ----
+// 21 Temmuz 2026 ve sonrasında başlayan maçlarda yaklaşmanın yarım skor puanı,
+// oyuncunun SÖYLEDİĞİ skorun kendi iddaa oranının %85'ini geçemez.
+const APPROX_CAP_RATIO = 0.85;
+const APPROX_CAP_START_MS = Date.UTC(2026, 6, 20, 21, 0, 0); // 21 Tem 2026 00:00 (TR)
+
+// app.js scoreOddFor karşılığı: söylenen skorun oranı (listede yoksa modelden)
+function predScoreOddFor(match, h, a) {
+  const odds = match.odds || {};
+  const s = odds.score;
+  if (!s) return null;
+  const v = s[`${h}-${a}`];
+  if (typeof v === "number") return v;
+  return estimateSingleScoreOdd(odds.ms, h, a);
+}
+
+function approxHalfScorePts(match, ph, pa, sp) {
+  const half = sp / 2;
+  const dt = match.datetime;
+  const dtMs = dt && typeof dt.toMillis === "function" ? dt.toMillis()
+    : (dt ? new Date(dt).getTime() : 0);
+  if (!dtMs || dtMs < APPROX_CAP_START_MS) return half;
+  const predOdd = predScoreOddFor(match, ph, pa);
+  if (typeof predOdd !== "number" || !(predOdd > 0)) return half;
+  return Math.min(half, predOdd * APPROX_CAP_RATIO);
+}
+
+// ---- Derbi ×2: app.js ile birebir aynı kural ----
+// Dört büyükler kendi arasında oynayınca tüm puanlar (sonuç, skor, yaklaşma, +3 bonus) katlanır.
+const DERBY_X2_START_MS = APPROX_CAP_START_MS;
+const DERBY_TEAMS = ["galatasaray", "fenerbahçe", "fenerbahce", "trabzonspor", "beşiktaş", "besiktas"];
+
+function isDerbyTeam(name) {
+  const n = String(name || "").toLocaleLowerCase("tr");
+  return DERBY_TEAMS.some(t => n.includes(t));
+}
+
+function derbyMultiplier(match) {
+  if (!match) return 1;
+  const dt = match.datetime;
+  const dtMs = dt && typeof dt.toMillis === "function" ? dt.toMillis()
+    : (dt ? new Date(dt).getTime() : 0);
+  if (!dtMs || dtMs < DERBY_X2_START_MS) return 1;
+  return isDerbyTeam(match.homeTeam) && isDerbyTeam(match.awayTeam) ? 2 : 1;
+}
+
 // ---- index.html'deki puanlama mantığının birebir kopyası ----
 function autoPointsFor(pred, match, preds) {
   const ah = match.homeScore, aa = match.awayScore;
@@ -682,7 +728,7 @@ function autoPointsFor(pred, match, preds) {
     pts = op + sp;
   } else if (diff === approxDiff) {
     const someoneExact = preds.some(q => q.homePred === ah && q.awayPred === aa);
-    pts = someoneExact ? op : (op + sp / 2);
+    pts = someoneExact ? op : (op + approxHalfScorePts(match, ph, pa, sp));
   } else {
     pts = op;
   }
@@ -691,7 +737,8 @@ function autoPointsFor(pred, match, preds) {
     Math.sign(q.homePred - q.awayPred) === actOutcome).length;
   if (correctOutcomeCount === 1) pts += 3;
 
-  return pts;
+  // Derbi ×2: sonuç + skor/yaklaşma + tek bilme bonusu hepsi birden katlanır.
+  return pts * derbyMultiplier(match);
 }
 
 function computeScoreboard(match, preds, usersMap) {
