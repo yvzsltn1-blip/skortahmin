@@ -202,6 +202,20 @@
           <div class="hero-eyebrow">AEFY Lig <span class="hero-eyebrow-sep"></span> 2026 Sezonu</div>
           <h2 class="hero-title">Skoru bil,<br><span class="hero-title-accent">zirveye yerleş.</span></h2>
           <p class="hero-desc">Her maç için skor tahminini yap, isabetin kadar puan topla. Sezon sonunda kupayı en çok bilen kaldırır.</p>
+          <button type="button" class="hero-guide-btn" onclick="openPointsGuide()" aria-haspopup="dialog">
+            <span class="hero-guide-btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 7.2C10.1 5.6 7.6 5 4.6 5.2v12.1c3-.2 5.5.4 7.4 2 1.9-1.6 4.4-2.2 7.4-2V5.2c-3-.2-5.5.4-7.4 2Z"/>
+                <path d="M12 7.2v12.1"/>
+              </svg>
+            </span>
+            <span class="hero-guide-btn-title">Puanlama Sistemi</span>
+            <span class="hero-guide-btn-sep" aria-hidden="true"></span>
+            <span class="hero-guide-btn-sub">kurallar ve örnekler</span>
+            <svg class="hero-guide-btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h12M12.5 7l4.8 5-4.8 5"/>
+            </svg>
+          </button>
         </div>
       </div>
     </section>
@@ -320,7 +334,7 @@
           </div>
         </div>
         <div class="lb-header-actions">
-          <button type="button" class="lb-rules-link" onclick="switchView('rules')" title="Puan kurallarını oku">📖 Nasıl puan kazanılır?</button>
+          <button type="button" class="lb-rules-link" onclick="openPointsGuide()" title="Puan kurallarını oku" aria-haspopup="dialog">📖 Nasıl puan kazanılır?</button>
           <select id="leaderboard-tournament-filter" class="input-field tournament-filter lb-tournament-filter" onchange="onLeaderboardFilterChange(this.value)"></select>
         </div>
       </div>
@@ -389,92 +403,7 @@
         </div>
       </div>
 
-      <div class="rules-note">
-        <strong>Puan iki parçadan oluşur:</strong> her maç için admin/iddaa oranlarından türetilen
-        <strong>Sonuç puanı</strong> (1 / X / 2 doğruysa) ve <strong>Skor puanı</strong> (tam skora göre).
-        Yüksek oranlı sürprizler daha çok puan getirir.
-      </div>
-
-      <div class="rules-grid">
-        <div class="rules-card">
-          <div class="rules-card-icon">🎯</div>
-          <h3>Tam skor</h3>
-          <p>Hem kazananı/beraberliği hem de kesin skoru bildin. En yüksek ödül.</p>
-          <span class="pts-pill">Sonuç + Skor (tam)</span>
-        </div>
-        <div class="rules-card blue">
-          <div class="rules-card-icon">📐</div>
-          <h3>Yaklaşma</h3>
-          <p>Sonuç doğru; skorda tek gol farkı. Örn. 2-1 varken 2-0 veya 1-1. Beraberlikte her iki tarafta 1 fark da sayılır (0-0 ↔ 1-1).</p>
-          <span class="pts-pill">Sonuç + Skor / 2</span>
-        </div>
-        <div class="rules-card gold">
-          <div class="rules-card-icon">✅</div>
-          <h3>Sadece sonuç</h3>
-          <p>Kim kazanır / berabere kalır doğru; skor uzak. Yine de sonuç puanını alırsın.</p>
-          <span class="pts-pill">Sadece Sonuç puanı</span>
-        </div>
-        <div class="rules-card red">
-          <div class="rules-card-icon">❌</div>
-          <h3>Yanlış sonuç</h3>
-          <p>Kazanan/berabere yanlışsa skora bakılmaz — maçtan <strong>0 puan</strong>.</p>
-          <span class="pts-pill">0 puan</span>
-        </div>
-        <div class="rules-card orange">
-          <div class="rules-card-icon">🔥</div>
-          <h3>Yalnız doğru bilen</h3>
-          <p>Grupta o maçın sonucunu (1/X/2) yalnızca sen bildiysen ekstra bonus.</p>
-          <span class="pts-pill">+3 bonus</span>
-        </div>
-        <div class="rules-card">
-          <div class="rules-card-icon">⚠️</div>
-          <h3>Yaklaşma istisnası</h3>
-          <p>Birisi tam skoru bildiyse, yaklaşma yapanlar yarım skor puanı almaz — yalnızca sonuç puanı kalır.</p>
-          <span class="pts-pill">Tam skor varsa yarım yok</span>
-        </div>
-      </div>
-
-      <h3 class="admin-card-title" style="margin: 0.4rem 0 0.75rem;">Örnek senaryolar</h3>
-      <div class="rules-examples" style="margin-bottom: 1.1rem;">
-        <div class="rules-example">
-          <div class="ex-title">Maç 2-1 bitti · sen 2-1 dedin</div>
-          <div class="ex-pts">Sonuç + Skor</div>
-          <div class="ex-desc">Tam isabet. Formda yeşil <strong>S</strong> noktası.</div>
-        </div>
-        <div class="rules-example">
-          <div class="ex-title">Maç 2-1 · sen 2-0 · kimse tam skoru bilmedi</div>
-          <div class="ex-pts">Sonuç + ½ Skor</div>
-          <div class="ex-desc">Yaklaşma. Formda mavi <strong>Y</strong>.</div>
-        </div>
-        <div class="rules-example">
-          <div class="ex-title">Maç 1-1 · sen 0-0 · kimse 1-1 demedi</div>
-          <div class="ex-pts">Sonuç + ½ Skor</div>
-          <div class="ex-desc">Beraberlikte her iki tarafta 1 fark yaklaşma sayılır.</div>
-        </div>
-        <div class="rules-example">
-          <div class="ex-title">Maç 3-0 · sen 1-0 · gruptan sadece sen ev sahibi dedin</div>
-          <div class="ex-pts">Sonuç + 3</div>
-          <div class="ex-desc">Sonuç doğru + yalnız sen bildiğin için +3. Formda sarı <strong>1</strong>.</div>
-        </div>
-        <div class="rules-example">
-          <div class="ex-title">Maç 0-2 · sen 1-0 dedin</div>
-          <div class="ex-pts">0</div>
-          <div class="ex-desc">Yanlış taraf — skor yakın olsa bile puan yok. Formda kırmızı ×; seri kopar.</div>
-        </div>
-      </div>
-
-      <div class="rules-note">
-        <strong>Form (son 5):</strong> Soldan sağa eskiden yeniye. Sadece sonucu girilmiş ve senin tahmininin olduğu maçlar sayılır.<br>
-        <strong>Seri 🔥:</strong> En son maçtan geriye, üst üste sonuç bildiğin (puan &gt; 0) maç sayısı. Iskalayınca sıfırlanır.<br>
-        <strong>Turnuva filtresi:</strong> Puan durumu, form ve seri seçili turnuvaya göre hesaplanır.
-      </div>
-
-      <div class="rules-note">
-        <strong>🎯 Sezon Bonus Tahmini:</strong> Admin bir turnuvaya bonus tahmin açarsa sezon başında
-        tahminini girersin (örn. ilk 6 + son 3 sıralaması ya da şampiyon). Sezon sonunda admin gerçek
-        sıralamaya göre puanları yazar ve onaylar; bu puanlar puan durumu toplamına eklenir.
-        Herkesin tahmini Arşiv sayfasının en üstünde görünür.
-      </div>
+      <div id="rules-page-body" class="guide-content guide-content-page"></div>
 
       <div class="rules-back-row">
         <button type="button" class="btn btn-primary" onclick="switchView('leaderboard')">Puan Durumuna dön</button>
@@ -661,6 +590,23 @@
           </div>
           <div id="bulletin-search-result" style="margin-top: 0.75rem;"></div>
         </div>
+      </div>
+
+      <!-- Fixture window (Maçlar sayfasında kaç günlük fikstür görünsün) -->
+      <div class="admin-card">
+        <h3 class="admin-card-title">🗓️ Fikstür Penceresi</h3>
+        <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          Maçlar sayfasında önümüzdeki kaç günün maçlarının listeleneceğini belirler.
+          Pencerenin dışında kalan maçlar gizlenmez — tarihi yaklaştıkça otomatik görünür;
+          oynanmış maçlar Arşiv'de kalır. Tarihi belli olmayan (TBD) maçlar bu ayardan
+          bağımsız olarak her zaman listelenir. Değişiklik tüm kullanıcılarda anında geçerli olur.
+        </p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <label for="upcoming-window-select" class="section-subtitle" style="margin: 0;">Gösterim aralığı:</label>
+          <select id="upcoming-window-select" class="input-field" style="width: auto; min-width: 130px;"
+                  onchange="saveUpcomingWindowDays(this.value)"></select>
+        </div>
+        <p id="upcoming-window-hint" class="section-subtitle" style="margin-top: 0.6rem;"></p>
       </div>
 
       <!-- Fixture date proposals (Nesine) -->
@@ -853,6 +799,27 @@
 
   <!-- Toast container -->
   <div id="toast-container"></div>
+
+  <!-- Puanlama Rehberi (baloncuk) — dışına tıkla / ESC / geri tuşu ile kapanır -->
+  <div id="points-guide-modal" class="guide-overlay hidden" onclick="if (event.target.id === 'points-guide-modal') closePointsGuide()">
+    <div class="guide-bubble" role="dialog" aria-modal="true" aria-labelledby="points-guide-title" onclick="event.stopImmediatePropagation()">
+      <div class="guide-bubble-head">
+        <div class="guide-bubble-head-text">
+          <span class="guide-bubble-eyebrow">AEFY Lig · Kural Kitabı</span>
+          <h3 id="points-guide-title">Puanlama Sistemi</h3>
+          <p class="guide-bubble-sub">Puan nasıl hesaplanır, hangi kural ne kazandırır — örneklerle.</p>
+        </div>
+        <button type="button" class="guide-close" onclick="closePointsGuide()" aria-label="Kapat">×</button>
+      </div>
+      <div class="guide-bubble-scroll">
+        <div id="points-guide-body" class="guide-content"></div>
+      </div>
+      <div class="guide-bubble-foot">
+        <span class="guide-foot-hint">Kapatmak için dışarı dokun, ESC'e ya da geri tuşuna bas.</span>
+        <button type="button" class="btn btn-primary btn-sm" onclick="closePointsGuide()">Anladım</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Breakdown Modal (Puan Detayı) -->
   <div id="breakdown-modal" class="modal-overlay hidden" onclick="if (event.target.id === 'breakdown-modal') closeBreakdownModal()">

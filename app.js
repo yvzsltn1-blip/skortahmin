@@ -216,7 +216,15 @@
     // değiştirebilir; Firestore'daki datetime alanı seçilen yılı taşır.
     const DEFAULT_YEAR = new Date().getFullYear();
     const MATCH_YEAR_PREFERENCE_KEY = 'skorTahminDefaultMatchYear';
-    const UPCOMING_WINDOW_MS = 4 * 24 * 60 * 60 * 1000; // next 4 days
+    // Maçlar sayfasında kaç günlük fikstür gösterilecek. Admin panelinden
+    // ayarlanır (settings/app.upcomingWindowDays); ayar yoksa 4 gün.
+    const DEFAULT_UPCOMING_WINDOW_DAYS = 4;
+    const UPCOMING_WINDOW_DAY_OPTIONS = [1, 2, 3, 4, 5, 7, 10, 14, 21, 30];
+    let upcomingWindowDays = DEFAULT_UPCOMING_WINDOW_DAYS;
+
+    function upcomingWindowMs() {
+      return upcomingWindowDays * 24 * 60 * 60 * 1000;
+    }
     const PREDICTION_CUTOFF_MS = 15 * 60 * 1000;
 
     function isValidMatchYear(year) {
@@ -332,12 +340,13 @@
       return !!match.datetime && match.datetime.getTime() < Date.now();
     }
 
-    // Main page shows only matches in the next 4 days (undated matches stay visible).
+    // Main page shows only matches inside the admin-configured window
+    // (undated matches stay visible).
     function isUpcomingMatch(match) {
       if (!match.datetime) return true;
       const t = match.datetime.getTime();
       const now = Date.now();
-      return t >= now && t <= now + UPCOMING_WINDOW_MS;
+      return t >= now && t <= now + upcomingWindowMs();
     }
 
     // Played / in-progress matches whose result (and therefore points) hasn't been
@@ -1422,6 +1431,50 @@
       }
     }
 
+    // ---- Fikstür penceresi (Maçlar sayfasında kaç günlük maç görünsün) ----
+    function syncUpcomingWindowUI() {
+      const select = document.getElementById('upcoming-window-select');
+      if (select) {
+        if (!select.options.length) {
+          select.innerHTML = UPCOMING_WINDOW_DAY_OPTIONS
+            .map(d => `<option value="${d}">${d} gün</option>`).join('');
+        }
+        // Ayar listede olmayan bir değere (ör. elle 45) çekilmişse onu da göster
+        if (!UPCOMING_WINDOW_DAY_OPTIONS.includes(upcomingWindowDays) &&
+            !Array.from(select.options).some(o => Number(o.value) === upcomingWindowDays)) {
+          select.insertAdjacentHTML('beforeend',
+            `<option value="${upcomingWindowDays}">${upcomingWindowDays} gün</option>`);
+        }
+        select.value = String(upcomingWindowDays);
+      }
+      const hint = document.getElementById('upcoming-window-hint');
+      if (hint) {
+        hint.textContent = `Şu an Maçlar sayfasında önümüzdeki ${upcomingWindowDays} günün maçları listeleniyor.`;
+      }
+    }
+
+    async function saveUpcomingWindowDays(value) {
+      if (!isAdmin) return;
+      const days = Math.min(Math.max(Math.round(Number(value) || 0), 1), 365);
+      if (!days) return;
+      const select = document.getElementById('upcoming-window-select');
+      if (select) select.disabled = true;
+      try {
+        await db.collection('settings').doc('app').set({ upcomingWindowDays: days }, { merge: true });
+        // onSnapshot da güncelleyecek; yine de anında geri bildirim ver
+        upcomingWindowDays = days;
+        syncUpcomingWindowUI();
+        if (currentView === 'matches') renderMatches();
+        showToast(`Fikstür penceresi ${days} güne ayarlandı.`, 'success');
+      } catch (error) {
+        console.error(error);
+        showToast(`Ayar kaydedilemedi: ${error.message}`, 'warning');
+        syncUpcomingWindowUI();
+      } finally {
+        if (select) select.disabled = false;
+      }
+    }
+
     async function addTournamentTag() {
       const name = prompt('Yeni turnuva / etiket adı (örn. Süper Lig, Şampiyonlar Ligi):');
       if (name == null) return;
@@ -1491,6 +1544,17 @@
         allowedEmails = data.allowedEmails || [];
         teamLogoUrls = data.teamLogos && typeof data.teamLogos === 'object' ? data.teamLogos : {};
         celebrationData = data.celebration || null;
+
+        // Fikstür penceresi (gün): admin panelinden ayarlanır, herkeste anında geçerli olur.
+        const configuredWindow = Number(data.upcomingWindowDays);
+        const nextWindow = Number.isFinite(configuredWindow) && configuredWindow >= 1
+          ? Math.min(Math.round(configuredWindow), 365)
+          : DEFAULT_UPCOMING_WINDOW_DAYS;
+        const windowChanged = nextWindow !== upcomingWindowDays;
+        upcomingWindowDays = nextWindow;
+        syncUpcomingWindowUI();
+        if (windowChanged && currentView === 'matches') renderMatches();
+
         const list = Array.isArray(data.tournaments) ? data.tournaments.filter(Boolean) : [];
         inactiveTournaments = Array.isArray(data.inactiveTournaments) ? data.inactiveTournaments.filter(Boolean) : [];
         // DEFAULT_TOURNAMENT her zaman listede bulunsun
@@ -1760,7 +1824,7 @@
       // Closed-but-not-scored matches get their own collapsible section.
       renderPendingResults();
 
-      // Only the next 4 days are shown here; older matches live in the Archive.
+      // Only the configured window is shown here; older matches live in the Archive.
       let upcomingMatches = matches.filter(isUpcomingMatch);
       if (fixtureTournamentFilter !== ALL_TOURNAMENTS) {
         upcomingMatches = upcomingMatches.filter(m => tournamentOf(m) === fixtureTournamentFilter);
@@ -1772,7 +1836,7 @@
         const desc = noMatches.querySelector('.no-data-desc');
         if (desc) {
           desc.textContent = matches.length
-            ? 'Önümüzdeki 4 günde maç yok. Geçmiş maçlar Arşiv sekmesinde.'
+            ? `Önümüzdeki ${upcomingWindowDays} günde maç yok. Geçmiş maçlar Arşiv sekmesinde.`
             : 'Admin maç ekleyene kadar lütfen bekleyin.';
         }
         return;
@@ -4047,6 +4111,247 @@
       const modal = document.getElementById('breakdown-modal');
       if (modal) modal.classList.add('hidden');
     }
+
+    // ================== PUANLAMA REHBERİ (baloncuk) ==================
+    // Kuralların TEK metin kaynağı. Hem hero'daki baloncuk modalı hem de
+    // "Nasıl puan kazanılır?" sayfası (view-rules) bu HTML'i basar; böylece
+    // kural değiştiğinde iki yerde ayrı ayrı güncelleme derdi olmaz.
+    // Rakamlar bu dosyadaki gerçek sabitlerden türetilir:
+    //   APPROX_CAP_RATIO (0.85), APPROX_CAP_START_MS, DERBY_TEAMS,
+    //   PREDICTION_CUTOFF_MS, SCORE_EST_SINGLE_CAP, bonus varsayılanları.
+    const GUIDE_CAP_PCT = Math.round(APPROX_CAP_RATIO * 100);
+    const GUIDE_CAP_DATE = '21 Temmuz 2026';
+    const GUIDE_CUTOFF_MIN = Math.round(PREDICTION_CUTOFF_MS / 60000);
+
+    function guideSection(id, icon, title, sub, body) {
+      return `
+        <section class="guide-sec" id="guide-sec-${id}">
+          <div class="guide-sec-head">
+            <span class="guide-sec-icon">${icon}</span>
+            <div>
+              <h4 class="guide-sec-title">${title}</h4>
+              ${sub ? `<p class="guide-sec-sub">${sub}</p>` : ''}
+            </div>
+          </div>
+          <div class="guide-sec-body">${body}</div>
+        </section>`;
+    }
+
+    // Küçük hesap kutusu: "şöyle bir maç → şu kadar puan"
+    function guideExample(title, rows, resultLabel, resultValue, tone) {
+      return `
+        <div class="guide-ex ${tone || ''}">
+          <div class="guide-ex-title">${title}</div>
+          <div class="guide-ex-rows">
+            ${rows.map(r => `<div class="guide-ex-row"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}
+          </div>
+          <div class="guide-ex-result"><span>${resultLabel}</span><b>${resultValue}</b></div>
+        </div>`;
+    }
+
+    function pointsGuideHTML() {
+      const formulaBox = `
+        <div class="guide-formula">
+          <span class="guide-formula-part outcome">Sonuç puanı</span>
+          <span class="guide-formula-op">+</span>
+          <span class="guide-formula-part score">Skor puanı</span>
+          <span class="guide-formula-op">+</span>
+          <span class="guide-formula-part bonus">Bonuslar</span>
+          <span class="guide-formula-op">=</span>
+          <span class="guide-formula-total">Maç puanın</span>
+        </div>`;
+
+      return `
+        <div class="guide-intro">
+          <p><b>Tek cümlede:</b> puanın iddaa oranlarından gelir. Herkesin bildiği sonuç az,
+          kimsenin beklemediği sonuç çok puan getirir. Doğru tarafı tutturmak şart; skoru da
+          bilirsen üstüne büyük ödül gelir.</p>
+          ${formulaBox}
+        </div>
+
+        <div class="guide-quick">
+          <div class="guide-quick-item exact"><span class="guide-quick-dot">S</span><div><b>Tam skor</b><small>Sonuç + Skor puanının tamamı</small></div></div>
+          <div class="guide-quick-item approx"><span class="guide-quick-dot">Y</span><div><b>Yaklaşma</b><small>Sonuç + Skor/2 (%${GUIDE_CAP_PCT} tavanlı)</small></div></div>
+          <div class="guide-quick-item outcome"><span class="guide-quick-dot">1</span><div><b>Sadece sonuç</b><small>Sonuç puanı</small></div></div>
+          <div class="guide-quick-item miss"><span class="guide-quick-dot">✕</span><div><b>Yanlış sonuç</b><small>0 puan, seri kopar</small></div></div>
+        </div>
+
+        ${guideSection('odds', '📊', 'Puanlar oranlardan gelir', 'Sonuç puanı ve skor puanı maçın kendi iddaa oranlarıdır.', `
+          <ul class="guide-list">
+            <li><b>Sonuç puanı</b> = maçta <u>gerçekleşen</u> sonucun (1 / X / 2) iddaa oranı. Maç 2-1 bittiyse ve ev sahibi oranı 2.10 idi, sonuç puanı 2.10'dur.</li>
+            <li><b>Skor puanı</b> = maçta <u>gerçekleşen</u> skorun iddaa oranı. 2-1 skorunun oranı 8.50 ise skor puanı 8.50'dir.</li>
+            <li>Oranlar maç öncesi Nesine bülteninden otomatik çekilir; skoru bültende olmayan sonuçlarda (örn. 5-4) oran istatistik modeliyle tahmin edilir ve <b>~</b> işaretiyle gösterilir. Tek bir skorun oranı en fazla <b>${SCORE_EST_SINGLE_CAP}</b> olabilir.</li>
+            <li>Sürpriz sonuç = yüksek oran = yüksek puan. Favorinin kazandığı maçtan az puan çıkar.</li>
+          </ul>
+          ${guideExample('Maç 2-1 bitti · oranlar 1: 2.10 · 2-1 skoru: 8.50', [
+            ['Sonuç puanı (1 oranı)', '2.10'],
+            ['Skor puanı (2-1 oranı)', '8.50']
+          ], 'Tam skor bilenin puanı', '10.60')}
+        `)}
+
+        ${guideSection('exact', '🎯', 'Tam skor', 'Hem tarafı hem skoru bildin.', `
+          <p>Sonuç puanının <b>tamamı</b> + skor puanının <b>tamamı</b>. Ligdeki en büyük ödül budur;
+          formunda yeşil <b>S</b> noktası olarak görünür ve 🎯 skor serini büyütür.</p>
+        `)}
+
+        ${guideSection('approx', '📐', 'Yaklaşma', 'Taraf doğru, skor bir gol ıskaladı.', `
+          <ul class="guide-list">
+            <li><b>Galibiyet/mağlubiyet maçlarında:</b> gerçek skora <b>toplam 1 gol</b> uzaklık. Maç 2-1 bittiyse <b>2-0 ve 3-1</b> yaklaşmadır; 1-0 ya da 3-2 iki gol uzakta kaldığı için sayılmaz.</li>
+            <li><b>Beraberliklerde:</b> her iki tarafta birer gol sapma. Maç 1-1 bittiyse <b>0-0 ve 2-2</b> yaklaşmadır.</li>
+            <li>Ödül: sonuç puanı + <b>skor puanının yarısı</b>.</li>
+          </ul>
+          <div class="guide-callout warn">
+            <div class="guide-callout-title">⛔ %${GUIDE_CAP_PCT} tavanı (${GUIDE_CAP_DATE} ve sonrası)</div>
+            <p>Yaklaşmadan alınan yarım skor puanı, <b>senin söylediğin skorun</b> kendi oranının
+            <b>%${GUIDE_CAP_PCT}'ini geçemez</b>. Yani düşük oranlı bir skor söyleyip, çok yüksek oranlı bir
+            sonucun yarısını cebe atmak yok.</p>
+            <div class="guide-formula-mini">Yaklaşma puanı = min( gerçekleşen skorun oranı ÷ 2 , söylediğin skorun oranı × ${APPROX_CAP_RATIO} )</div>
+          </div>
+          ${guideExample('Maç 4-1 bitti (4-1 oranı 50.00) · sen 3-1 dedin (3-1 oranı 12.00)', [
+            ['Yarım skor puanı', '50.00 ÷ 2 = 25.00'],
+            [`Tavan (söylediğin skor × ${APPROX_CAP_RATIO})`, '12.00 × 0.85 = 10.20'],
+            ['Küçük olan geçerli', '10.20']
+          ], 'Yaklaşma puanın', 'Sonuç puanı + 10.20', 'warn')}
+          <p class="guide-mini-note">${GUIDE_CAP_DATE} öncesindeki maçlar eski kuralla (tavansız yarım puan) kalır;
+          oran verisi bulunamayan maçlarda da tavan uygulanmaz.</p>
+        `)}
+
+        ${guideSection('blocked', '⚠️', 'Yaklaşma istisnası', 'Tam skoru bilen varsa yarım puan dağıtılmaz.', `
+          <p>Grupta <b>birisi tam skoru bildiyse</b>, aynı maçta yaklaşanlar yarım skor puanını
+          <b>alamaz</b> — onlara yalnızca sonuç puanı yazılır. Puan detayında bu "engellenen yaklaşma"
+          olarak ayrıca gösterilir.</p>
+        `)}
+
+        ${guideSection('outcome', '✅', 'Sadece sonuç', 'Tarafı bildin, skor uzak.', `
+          <p>Kazananı ya da beraberliği doğru bildiysen skorun ne kadar uzak olursa olsun
+          <b>sonuç puanını tam alırsın</b>. Formunda sarı <b>1</b> noktası olarak görünür ve
+          🔥 sonuç serin devam eder.</p>
+        `)}
+
+        ${guideSection('miss', '❌', 'Yanlış sonuç', 'Taraf yanlışsa skora bakılmaz.', `
+          <p>Kazanan/berabere tahminin tutmadıysa maçtan <b>0 puan</b> alırsın — skorun ne kadar
+          yakın olduğu fark etmez. Formunda kırmızı <b>✕</b> çıkar ve serilerin sıfırlanır.</p>
+        `)}
+
+        ${guideSection('lonely', '🔥', 'Yalnız bilme bonusu: +3', 'Sonucu gruptan yalnızca sen bildiysen.', `
+          <p>Bir maçın sonucunu (1/X/2) tahmin yapanlar arasında <b>tek başına</b> bildiysen,
+          maç puanının üstüne <b>+3 puan</b> eklenir. Herkesin favoriye oynadığı maçta sürprizi
+          görmenin ödülü budur.</p>
+          ${guideExample('Maç 0-2 bitti · gruptan deplasmanı sadece sen dedin', [
+            ['Sonuç puanı (2 oranı)', '4.30'],
+            ['Yalnız bilme bonusu', '+3.00']
+          ], 'Toplam', '7.30')}
+        `)}
+
+        ${guideSection('derby', '⚔️', 'Derbi ×2', 'Dört büyükler kendi arasında oynarsa tüm puanlar iki katı.', `
+          <p><b>Galatasaray, Fenerbahçe, Trabzonspor ve Beşiktaş</b> birbirleriyle oynadığında
+          o maçtan çıkan <b>her şey ikiyle çarpılır</b>: sonuç puanı, tam skor puanı, yaklaşma puanı
+          ve yalnız bilme bonusu (3 → 6). Maç kartında 🔥 <b>Derbi ×2</b> rozeti görünür.</p>
+          ${guideExample('Derbi · maç 2-1 · sen 2-1 dedin (1 oranı 2.40, skor oranı 9.00)', [
+            ['Normal maçta olsaydı', '2.40 + 9.00 = 11.40'],
+            ['Derbi çarpanı', '× 2']
+          ], 'Derbide kazandığın', '22.80', 'gold')}
+          <p class="guide-mini-note">${GUIDE_CAP_DATE} ve sonrasında oynanan derbilerde geçerlidir;
+          eski maçların puanları değişmez.</p>
+        `)}
+
+        ${guideSection('bonus', '🏁', 'Sezon başı sıralama tahmini', 'Sezon açılışında yapılan büyük tahmin.', `
+          <p>Admin bir turnuvaya bonus tahmin açtığında, sezon başında <b>ligin bitiş sıralamasını</b>
+          tahmin edersin (örneğin <b>ilk 6 + son 3</b>). Bazı turnuvalarda sadece <b>şampiyon</b> sorulur.
+          Bu puanlar sezon boyunca beklemede kalır, sezon sonunda puan durumu toplamına eklenir.</p>
+          <ul class="guide-list">
+            <li>🎯 <b>Tam sıra:</b> Bir takımın bitiş sırasını birebir bildin → <b>+10 puan</b>.</li>
+            <li>📦 <b>Grup isabeti:</b> İlk 6'ya yazdığın takım sırası tutmasa da sezonu ilk 6 içinde bitirdi → <b>+8 puan</b>. Aynısı son 3 için de geçerli.</li>
+            <li>✨ <b>İkisi birden:</b> Sırayı birebir bilmek her iki ödülü de verir → <b>+18 puan</b>.</li>
+            <li>Tahmin giriş dönemi açıkken istediğin kadar değiştirebilirsin; admin girişi kapatınca kilitlenir.</li>
+            <li>Sezon sonunda admin gerçek sıralamayı girer, puanlar otomatik hesaplanır ve onaylanınca puan durumuna eklenir. Herkesin tahmini Arşiv sayfasının en üstünde görünür.</li>
+          </ul>
+          ${guideExample('İlk 6 + Son 3 tahmini', [
+            ['5.\'ye yazdığın takım 5. bitti', '+18'],
+            ['1.\'ye yazdığın takım 2. bitti (yine ilk 6)', '+8'],
+            ['İlk 6\'ya yazdığın takım 9. bitti', '0']
+          ], 'Bu üç takımdan', '26 puan')}
+          <p class="guide-mini-note">Puan değerleri turnuvaya göre admin tarafından ayarlanabilir;
+          yukarıdakiler varsayılan değerlerdir. Açık bir bonus tahmin varsa Maçlar sayfasının
+          üstünde kartı görünür.</p>
+        `)}
+
+        ${guideSection('rules', '⏱️', 'Tahmin kuralları', 'Ne zaman, kaç kere?', `
+          <ul class="guide-list">
+            <li>Her maç için <b>tek tahmin hakkın</b> var.</li>
+            <li>Tahmin kapısı maç saatinden <b>${GUIDE_CUTOFF_MIN} dakika önce</b> kapanır; kilitlendikten sonra değiştirilemez.</li>
+            <li>Kilit açıkken tahminini istediğin kadar güncelleyebilirsin — son kaydettiğin geçerlidir.</li>
+            <li>Tahmin yapmadığın maçtan puan alamazsın; o maç formunu da etkilemez.</li>
+            <li>Tarihi belli olmayan (TBD) veya ertelenen maçlar, yeni tarihleri girilene kadar puanlamaya girmez.</li>
+          </ul>
+        `)}
+
+        ${guideSection('form', '📈', 'Form, seriler ve filtre', 'Puan durumundaki rozetler ne anlatıyor?', `
+          <ul class="guide-list">
+            <li><b>Form (son 5):</b> soldan sağa eskiden yeniye. Sadece sonucu girilmiş ve senin tahmininin olduğu maçlar sayılır. <b>S</b> tam skor, <b>Y</b> yaklaşma, <b>1</b> sadece sonuç, <b>✕</b> ıska.</li>
+            <li><b>🔥 Sonuç serisi:</b> en son maçtan geriye doğru üst üste puan aldığın (puan &gt; 0) maç sayısı. Bir ıska seriyi sıfırlar.</li>
+            <li><b>🎯 Skor serisi:</b> üst üste tam skor bildiğin maç sayısı.</li>
+            <li><b>Turnuva filtresi:</b> puan durumu, form ve seriler seçili turnuvaya göre hesaplanır.</li>
+            <li>Puan hücresindeki 👁 düğmesi, hangi maçtan kaç puan geldiğini maç maç gösterir.</li>
+          </ul>
+        `)}
+
+        <div class="guide-footer-note">
+          Kısacası: <b>tarafı tutturmadan puan yok</b>, sürprizi görmek çok kazandırır,
+          tam skor her şeyin üstünde. Derbilerde ikiye katlanır, sezon başı tahminin de
+          finalde cebine girer.
+        </div>`;
+    }
+
+    let pointsGuideHistoryPushed = false;
+
+    function pointsGuideKeyHandler(e) {
+      if (e.key === 'Escape') closePointsGuide();
+    }
+
+    function ensurePointsGuideBody(el) {
+      if (el && !el.dataset.filled) {
+        el.innerHTML = pointsGuideHTML();
+        el.dataset.filled = '1';
+      }
+    }
+
+    // Baloncuk modal: dışına tıklayınca, ESC'te ve geri tuşunda kapanır.
+    function openPointsGuide() {
+      const modal = document.getElementById('points-guide-modal');
+      if (!modal) return;
+      ensurePointsGuideBody(document.getElementById('points-guide-body'));
+      const scroller = modal.querySelector('.guide-bubble-scroll');
+      if (scroller) scroller.scrollTop = 0;
+      modal.classList.remove('hidden');
+      document.body.classList.add('guide-open');
+      document.addEventListener('keydown', pointsGuideKeyHandler);
+      if (!pointsGuideHistoryPushed) {
+        try {
+          history.pushState({ pointsGuide: true }, '');
+          pointsGuideHistoryPushed = true;
+        } catch (_) { /* history yoksa geri tuşu desteği atlanır */ }
+      }
+    }
+
+    function closePointsGuide(fromPopstate) {
+      const modal = document.getElementById('points-guide-modal');
+      if (!modal || modal.classList.contains('hidden')) return;
+      modal.classList.add('hidden');
+      document.body.classList.remove('guide-open');
+      document.removeEventListener('keydown', pointsGuideKeyHandler);
+      const pushed = pointsGuideHistoryPushed;
+      pointsGuideHistoryPushed = false;
+      // Geri tuşuyla kapandıysa history zaten geri gitti; buton/dış tıklamada biz geri alıyoruz
+      // ki modal açıkken basılan geri tuşu uygulamadan çıkmasın.
+      if (!fromPopstate && pushed) {
+        try { history.back(); } catch (_) {}
+      }
+    }
+
+    window.addEventListener('popstate', () => {
+      if (pointsGuideHistoryPushed) closePointsGuide(true);
+    });
 
     // ================== SEZON BONUS TAHMİNLERİ ==================
     // Admin bir turnuvaya bonus tahmin açar (bonus/{docId} config dokümanı):
@@ -6915,6 +7220,8 @@
         // ön-yüklemeye gerek yok.
         renderLeaderboard();
       }
+      if (view === 'rules') ensurePointsGuideBody(document.getElementById('rules-page-body'));
+      if (view === 'admin') syncUpcomingWindowUI();
       if (view === 'quick-entry') renderQuickEntry();
       if (view === 'archive') {
         // İlk açılışta veya hâlâ eski sabit değerdeyse admin'in varsayılan turnuvasını kullan
