@@ -132,7 +132,10 @@ Netlify Drop ile de hızlıca deploy edebilirsin ama sen zaten `aefy-lig.web.app
 - Canlı sitede birden fazla arkadaş farklı hesaplarla aynı anda test edebilir.
 - Güvenlik için Firebase Console'dan Firestore kurallarını production'a göre sıkılaştır (şu an test modunda çalışır).
 
-İleride yeni turnuva eklersen aynı scripti node functions/scripts/ofsayt-standings-logos.js <puan-durumu-url> assets/teams şeklinde çalıştırman yeterli.
+Yeni maçlar kaydedilirken eksik takım logoları Ofsayt futbol takım aramasından adlarına göre otomatik bağlanır; lig, Avrupa kupası veya ulusal kupa fark etmez ve hosting'i yeniden deploy etmek gerekmez. Admin panelindeki **Etiketleri Yönet → Logoları Getir** düğmesiyle mevcut turnuvaların eksik logoları da topluca tamamlanabilir. İstenirse Ofsayt turnuva adresi verilerek fikstür/puan durumu sayfasındaki tüm logolar tek seferde alınır.
+
+Manuel yedek yöntem:
+`node functions/scripts/ofsayt-standings-logos.js <puan-durumu-url> assets/teams`
 
 İyi eğlenceler! ⚽🏆
 Sorun yaşarsan Firebase Console → Authentication ve Hosting sekmelerini kontrol et.

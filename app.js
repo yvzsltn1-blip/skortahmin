@@ -32,6 +32,10 @@
     let archiveTournamentFilter = null; // will be set to admin's defaultTournament when settings load / archive opened
     let archiveWeekFilter = null;       // null = tarih görünümü; sayı = o haftanın maçları (hafta görünümü)
     let leaderboardTournamentFilter = ALL_TOURNAMENTS;
+    // Puan durumu her açıldığında en yakın tahmine açık maçın turnuvasını izler.
+    // Kullanıcı filtreyi elle değiştirince o görünüm açık kaldığı sürece seçimine dokunulmaz.
+    let leaderboardTournamentSelectionAutomatic = true;
+    let quickEntryTournamentFilter = ALL_TOURNAMENTS;
     let scoreFrequencySortUid = null; // null = toplam, otherwise user uid
 
     // ================== GLOBAL STATE ==================
@@ -43,6 +47,8 @@
     let usersMap = {};
     let allowedEmails = [];
     let pendingMatches = [];
+    const quickEntryDrafts = {};         // matchId -> { home: string, away: string }
+    let quickEntryConfirmItems = [];
     let pushListenersRegistered = false;
     let currentPushToken = null;
 
@@ -71,6 +77,7 @@
     let tournaments = [DEFAULT_TOURNAMENT]; // bilinen etiket listesi (settings/app.tournaments)
     let inactiveTournaments = [];        // yeni maç seçicisinde gösterilmeyen etiketler
     let defaultTournament = DEFAULT_TOURNAMENT; // adminin yeni maçlar için seçtiği kalıcı varsayılan
+    let teamLogoUrls = {};               // settings/app.teamLogos: { takim-slug: uzak logo URL'si }
     let tournamentSettingsInitialized = false;
     // Şampiyonluk kutlaması (settings/app.celebration): admin turnuva yöneticisinden
     // yayınlar; ilk 3 gün her girişte, sonrasında görmemiş kullanıcıya 1 kez gösterilir.
@@ -907,6 +914,7 @@
 
     function renderAll() {
       renderMatches();
+      renderQuickEntry();
       renderBonusEntryBanner();
       renderArchive();
       renderLeaderboard();
@@ -934,6 +942,36 @@
     function activeTournaments() {
       const inactive = new Set(inactiveTournaments);
       return knownTournaments().filter(t => !inactive.has(t));
+    }
+
+    // En yakın tahmine açık maçın aktif turnuvasını seçer. Gelecek maç yoksa
+    // yönetici varsayılanına, o da kullanılamıyorsa ilk aktif turnuvaya düşer.
+    function preferredLeaderboardTournament() {
+      const active = activeTournaments();
+      const activeSet = new Set(active);
+      const nearestMatch = matches
+        .filter(match => {
+          const tournament = tournamentOf(match);
+          const hasResult = match.homeScore != null || match.awayScore != null;
+          return activeSet.has(tournament) && !match.finalized && !hasResult && canPredict(match.datetime);
+        })
+        .sort((a, b) => {
+          const timeDiff = a.datetime.getTime() - b.datetime.getTime();
+          if (timeDiff !== 0) return timeDiff;
+          // Aynı saatte farklı turnuvalar varsa yönetici varsayılanını öne al.
+          return Number(tournamentOf(b) === defaultTournament) - Number(tournamentOf(a) === defaultTournament);
+        })[0];
+
+      if (nearestMatch) return tournamentOf(nearestMatch);
+      if (activeSet.has(defaultTournament)) return defaultTournament;
+      return active[0] || ALL_TOURNAMENTS;
+    }
+
+    function syncAutomaticLeaderboardTournament() {
+      if (!leaderboardTournamentSelectionAutomatic) return;
+      leaderboardTournamentFilter = preferredLeaderboardTournament();
+      const select = document.getElementById('leaderboard-tournament-filter');
+      if (select) select.value = leaderboardTournamentFilter;
     }
 
     // Bir maç kartı için turnuva rozeti HTML'i (aksan noktası CSS ::before ile gelir)
@@ -980,6 +1018,7 @@
         sel.innerHTML = opts.join('');
       };
       fillFilter('fixture-tournament-filter', fixtureTournamentFilter, true);
+      fillFilter('quick-entry-tournament-filter', quickEntryTournamentFilter, true);
       fillFilter('archive-tournament-filter', archiveTournamentFilter, false);
       fillFilter('leaderboard-tournament-filter', leaderboardTournamentFilter, false);
       renderTournamentManager();
@@ -1022,6 +1061,7 @@
             </div>
             <div class="tournament-manager-actions">
               ${!isInactive && !isDefault ? `<button type="button" class="btn btn-secondary js-default-tournament" data-tournament="${escapeHTML(t)}">Varsayılan Yap</button>` : ''}
+              <button type="button" class="btn btn-secondary js-sync-tournament-logos" data-tournament="${escapeHTML(t)}">🖼️ Logoları Getir</button>
               <button type="button" class="btn btn-secondary js-toggle-tournament" data-tournament="${escapeHTML(t)}">${isInactive ? 'Aktif Et' : 'Pasife Al'}</button>
               <button type="button" class="btn btn-secondary js-celebrate-tournament" data-tournament="${escapeHTML(t)}" title="Turnuva şampiyonunu tüm kullanıcılara kutlama olarak duyur">🏆 Şampiyonu Kutla</button>
             </div>
@@ -1033,6 +1073,9 @@
       });
       container.querySelectorAll('.js-toggle-tournament').forEach(button => {
         button.addEventListener('click', () => toggleTournamentTag(button.dataset.tournament));
+      });
+      container.querySelectorAll('.js-sync-tournament-logos').forEach(button => {
+        button.addEventListener('click', () => syncLogosForTournament(button.dataset.tournament));
       });
       container.querySelectorAll('.js-celebrate-tournament').forEach(button => {
         button.addEventListener('click', () => celebrateTournamentChampion(button.dataset.tournament));
@@ -1193,6 +1236,11 @@
       fixtureTournamentFilter = value;
       renderMatches();
     }
+
+    function onQuickEntryFilterChange(value) {
+      quickEntryTournamentFilter = value;
+      renderQuickEntry();
+    }
     function onArchiveFilterChange(value) {
       archiveTournamentFilter = value;
       archiveWeekFilter = null;
@@ -1262,7 +1310,11 @@
       if (optimizedMode) loadArchiveDayIndex();
     }
 
-    function onLeaderboardFilterChange(value) { leaderboardTournamentFilter = value; renderLeaderboard(); }
+    function onLeaderboardFilterChange(value) {
+      leaderboardTournamentSelectionAutomatic = false;
+      leaderboardTournamentFilter = value;
+      renderLeaderboard();
+    }
 
     async function setDefaultTournamentTag(name) {
       if (!isAdmin || !name) return;
@@ -1321,6 +1373,55 @@
     }
 
     // Admin: yeni turnuva etiketi ekle
+    async function syncTournamentLogos(standingsUrl = '', teamNames = []) {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('https://europe-west1-aefy-lig.cloudfunctions.net/ofsaytTeamLogos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...(standingsUrl ? { url: standingsUrl } : {}),
+          ...(teamNames.length ? { teamNames } : {})
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok || !data.logos) {
+        throw new Error(data.error || `Logo servisi HTTP ${res.status}`);
+      }
+
+      teamLogoUrls = { ...teamLogoUrls, ...data.logos };
+      await db.collection('settings').doc('app').set({
+        teamLogos: teamLogoUrls
+      }, { merge: true });
+      return Number(data.count) || Object.keys(data.logos).length;
+    }
+
+    async function syncLogosForTournament(tournamentName) {
+      const standingsUrl = prompt(
+        `"${tournamentName}" için Ofsayt.com turnuva adresi (opsiyonel):\nBoş bırakırsan takımlar adlarına göre otomatik bulunur.`
+      );
+      if (standingsUrl == null) return;
+      showToast(`"${tournamentName}" takım logoları alınıyor…`, 'success');
+      try {
+        const tournamentTeams = standingsUrl.trim()
+          ? []
+          : (await fetchTournamentTeams(tournamentName))
+              .filter(name => !teamLogoUrls[teamLogoSlug(name)]);
+        if (!standingsUrl.trim() && !tournamentTeams.length) {
+          showToast('Bu turnuvada eksik takım logosu bulunamadı.', 'success');
+          return;
+        }
+        const count = await syncTournamentLogos(standingsUrl.trim(), tournamentTeams);
+        renderAll();
+        showToast(`${count} takım logosu otomatik bağlandı.`, 'success');
+      } catch (error) {
+        console.error(error);
+        showToast(`Logolar alınamadı: ${error.message}`, 'warning');
+      }
+    }
+
     async function addTournamentTag() {
       const name = prompt('Yeni turnuva / etiket adı (örn. Süper Lig, Şampiyonlar Ligi):');
       if (name == null) return;
@@ -1334,6 +1435,9 @@
         return;
       }
       try {
+        const standingsUrl = prompt(
+          'Ofsayt.com puan durumu adresi (opsiyonel):\nGirersen takım logoları otomatik eklenir.'
+        );
         await db.collection('settings').doc('app').set({
           tournaments: firebase.firestore.FieldValue.arrayUnion(clean)
         }, { merge: true });
@@ -1341,7 +1445,19 @@
         // onSnapshot listesi tazeleyecek; yine de anında UI için ekle
         if (!tournaments.includes(clean)) tournaments.push(clean);
         refreshTournamentUI();
-        showToast(`"${clean}" etiketi eklendi.`, 'success');
+        if (standingsUrl && standingsUrl.trim()) {
+          showToast(`"${clean}" eklendi; takım logoları alınıyor…`, 'success');
+          try {
+            const count = await syncTournamentLogos(standingsUrl.trim());
+            renderAll();
+            showToast(`"${clean}" eklendi; ${count} takım logosu otomatik bağlandı.`, 'success');
+          } catch (logoError) {
+            console.error(logoError);
+            showToast(`Etiket eklendi; logolar alınamadı: ${logoError.message}`, 'warning');
+          }
+        } else {
+          showToast(`"${clean}" etiketi eklendi.`, 'success');
+        }
       } catch (e) {
         console.error(e);
         showToast('Etiket eklenemedi.', 'error');
@@ -1373,6 +1489,7 @@
       unsubscribeSettings = db.collection('settings').doc('app').onSnapshot(doc => {
         const data = doc.exists ? doc.data() : {};
         allowedEmails = data.allowedEmails || [];
+        teamLogoUrls = data.teamLogos && typeof data.teamLogos === 'object' ? data.teamLogos : {};
         celebrationData = data.celebration || null;
         const list = Array.isArray(data.tournaments) ? data.tournaments.filter(Boolean) : [];
         inactiveTournaments = Array.isArray(data.inactiveTournaments) ? data.inactiveTournaments.filter(Boolean) : [];
@@ -1620,8 +1737,10 @@
     // img kendini kaldırır ve monogram görünür kalır.
     function teamMark(teamName) {
       const slug = teamLogoSlug(teamName);
+      const localSrc = slug ? `assets/teams/${slug}.png` : '';
+      const remoteSrc = slug && teamLogoUrls[slug] ? String(teamLogoUrls[slug]) : '';
       const img = slug
-        ? `<img class="team-logo-img" src="assets/teams/${slug}.png" alt="" loading="lazy" onerror="this.remove()">`
+        ? `<img class="team-logo-img" src="${escapeHTML(remoteSrc || localSrc)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="${remoteSrc ? `this.onerror=()=>this.remove();this.src='${escapeHTML(localSrc)}'` : 'this.remove()'}">`
         : '';
       return `<span class="team-mark" aria-hidden="true">${escapeHTML(teamMonogram(teamName))}${img}</span>`;
     }
@@ -1708,7 +1827,7 @@
             statusBadgeText = 'Tamamlandı';
             statusClass = 'status-completed';
           } else if (open) {
-            statusBadgeText = 'Tahmine Açık';
+            statusBadgeText = '';
             statusClass = 'status-open';
           } else {
             statusBadgeText = 'Süre Doldu';
@@ -1825,7 +1944,7 @@
           card.innerHTML = `
             <div class="match-card-main">
               <div class="match-header">
-                <div class="match-status-badge ${statusClass}">${statusBadgeText}</div>
+                <div class="match-status-badge ${statusClass}"${open && !hasResult ? ' aria-label="Tahmine açık" title="Tahmine açık"' : ''}>${statusBadgeText}</div>
                 <div class="match-time">${formatted}</div>
                 ${match.postponed ? `<div class="match-status-badge status-closed">Ertelendi</div>` : ''}
                 ${match.week && !match.dateTbd ? `<div class="match-week-pill">${match.week}. Hafta</div>` : ''}
@@ -1853,6 +1972,252 @@
 
         container.appendChild(section);
       });
+    }
+
+    // ================== SERİ MAÇ GİRİŞİ ==================
+    function quickEntryMatches() {
+      if (!currentUser) return [];
+      const predictedIds = new Set(
+        allPredictions
+          .filter(prediction => prediction.uid === currentUser.uid)
+          .map(prediction => prediction.matchId)
+      );
+      let list = matches
+        .filter(isUpcomingMatch)
+        .filter(match => canPredict(match.datetime))
+        .filter(match => !predictedIds.has(match.id))
+        .sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
+      if (quickEntryTournamentFilter !== ALL_TOURNAMENTS) {
+        list = list.filter(match => tournamentOf(match) === quickEntryTournamentFilter);
+      }
+      return list;
+    }
+
+    function quickDraftNumber(value) {
+      if (value === '' || value == null) return null;
+      const number = Number(value);
+      return Number.isInteger(number) && number >= 0 && number <= 20 ? number : null;
+    }
+
+    function validQuickEntryItems() {
+      const available = new Map(quickEntryMatches().map(match => [match.id, match]));
+      return Object.entries(quickEntryDrafts).map(([matchId, draft]) => {
+        const match = available.get(matchId);
+        const homePred = quickDraftNumber(draft.home);
+        const awayPred = quickDraftNumber(draft.away);
+        return match && homePred != null && awayPred != null
+          ? { match, homePred, awayPred }
+          : null;
+      }).filter(Boolean);
+    }
+
+    function updateQuickEntryActionbar() {
+      const actionbar = document.getElementById('quick-entry-actionbar');
+      const countEl = document.getElementById('quick-entry-draft-count');
+      if (!actionbar || !countEl) return;
+      const count = validQuickEntryItems().length;
+      countEl.textContent = count;
+      actionbar.classList.toggle('hidden', count === 0);
+    }
+
+    function quickEntryPresetHTML(matchId) {
+      return ['0-0', '1-0', '0-1', '1-1', '2-1', '1-2']
+        .map(score => {
+          const [home, away] = score.split('-');
+          return `<button type="button" class="quick-score-preset" onclick="setQuickEntryScore('${matchId}', ${home}, ${away})">${score}</button>`;
+        }).join('');
+    }
+
+    function renderQuickEntry() {
+      const container = document.getElementById('quick-entry-list');
+      const countEl = document.getElementById('quick-entry-count');
+      if (!container) return;
+      const list = quickEntryMatches();
+      if (countEl) countEl.textContent = list.length ? list.length : '';
+
+      if (!list.length) {
+        container.innerHTML = `
+          <div class="quick-entry-empty">
+            <div class="quick-entry-empty-icon">✓</div>
+            <h3>Girilecek tahmin kalmadı</h3>
+            <p>Tahmine açık maçların tamamını girdin veya şu anda açık maç bulunmuyor.</p>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="switchView('matches')">Maçlara Dön</button>
+          </div>`;
+        updateQuickEntryActionbar();
+        return;
+      }
+
+      let lastDayKey = '';
+      container.innerHTML = list.map((match, index) => {
+        const dayKey = getDayKey(match.datetime);
+        const dayHeading = dayKey !== lastDayKey
+          ? `<div class="quick-entry-day">${escapeHTML(formatDayHeading(match.datetime))}</div>`
+          : '';
+        lastDayKey = dayKey;
+        const draft = quickEntryDrafts[match.id] || { home: '', away: '' };
+        const readyClass = quickDraftNumber(draft.home) != null && quickDraftNumber(draft.away) != null
+          ? ' is-ready'
+          : '';
+        const formatted = match.datetime
+          ? match.datetime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+          : '??:??';
+        return `
+          ${dayHeading}
+          <article class="quick-entry-row${readyClass}" data-quick-row="${match.id}">
+            <div class="quick-entry-meta">
+              <span class="quick-entry-index">${String(index + 1).padStart(2, '0')}</span>
+              <span class="quick-entry-time">${escapeHTML(formatted)}</span>
+              <span class="quick-entry-tournament">${escapeHTML(tournamentOf(match))}</span>
+            </div>
+            <div class="quick-entry-match">
+              <div class="quick-entry-team quick-entry-team-home">
+                ${teamNameSpan(match.homeTeam)}
+                ${teamMark(match.homeTeam)}
+              </div>
+              <div class="quick-entry-score">
+                <input type="number" inputmode="numeric" min="0" max="20"
+                       aria-label="${escapeHTML(match.homeTeam)} skoru"
+                       value="${escapeHTML(draft.home)}"
+                       data-quick-input="${match.id}-home"
+                       oninput="onQuickEntryInput(event, '${match.id}', 'home')">
+                <span>:</span>
+                <input type="number" inputmode="numeric" min="0" max="20"
+                       aria-label="${escapeHTML(match.awayTeam)} skoru"
+                       value="${escapeHTML(draft.away)}"
+                       data-quick-input="${match.id}-away"
+                       oninput="onQuickEntryInput(event, '${match.id}', 'away')">
+              </div>
+              <div class="quick-entry-team quick-entry-team-away">
+                ${teamMark(match.awayTeam)}
+                ${teamNameSpan(match.awayTeam)}
+              </div>
+            </div>
+            <div class="quick-score-presets" aria-label="Hızlı skor seçenekleri">
+              ${quickEntryPresetHTML(match.id)}
+            </div>
+          </article>`;
+      }).join('');
+      updateQuickEntryActionbar();
+    }
+
+    function focusNextQuickEntry(matchId, side) {
+      const inputs = Array.from(document.querySelectorAll('#quick-entry-list [data-quick-input]'));
+      const currentIndex = inputs.findIndex(input => input.dataset.quickInput === `${matchId}-${side}`);
+      const next = inputs[currentIndex + 1];
+      if (next) {
+        next.focus({ preventScroll: true });
+        next.select();
+        next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function onQuickEntryInput(event, matchId, side) {
+      const input = event.target;
+      const value = input.value.replace(/\D/g, '').slice(0, 2);
+      input.value = value;
+      quickEntryDrafts[matchId] = quickEntryDrafts[matchId] || { home: '', away: '' };
+      quickEntryDrafts[matchId][side] = value;
+      input.closest('.quick-entry-row')?.classList.toggle(
+        'is-ready',
+        quickDraftNumber(quickEntryDrafts[matchId].home) != null &&
+          quickDraftNumber(quickEntryDrafts[matchId].away) != null
+      );
+      updateQuickEntryActionbar();
+      if (/^\d$/.test(value)) setTimeout(() => focusNextQuickEntry(matchId, side), 0);
+    }
+
+    function setQuickEntryScore(matchId, homePred, awayPred) {
+      quickEntryDrafts[matchId] = { home: String(homePred), away: String(awayPred) };
+      const homeInput = document.querySelector(`[data-quick-input="${matchId}-home"]`);
+      const awayInput = document.querySelector(`[data-quick-input="${matchId}-away"]`);
+      if (homeInput) homeInput.value = homePred;
+      if (awayInput) awayInput.value = awayPred;
+      homeInput?.closest('.quick-entry-row')?.classList.add('is-ready');
+      updateQuickEntryActionbar();
+      focusNextQuickEntry(matchId, 'away');
+    }
+
+    function openQuickEntryConfirm() {
+      const availableIds = new Set(quickEntryMatches().map(match => match.id));
+      const partialCount = Object.entries(quickEntryDrafts).filter(([matchId, draft]) =>
+        availableIds.has(matchId) &&
+        (draft.home !== '' || draft.away !== '') &&
+        !(quickDraftNumber(draft.home) != null && quickDraftNumber(draft.away) != null)
+      ).length;
+      if (partialCount) {
+        showToast(`${partialCount} maçta skorun bir tarafı eksik. Önce onları tamamla.`, 'warning');
+        return;
+      }
+      quickEntryConfirmItems = validQuickEntryItems();
+      if (!quickEntryConfirmItems.length) {
+        showToast('Kilitlemek için en az bir tahmin gir.', 'warning');
+        return;
+      }
+      const list = document.getElementById('quick-entry-confirm-list');
+      list.innerHTML = quickEntryConfirmItems.map(({ match, homePred, awayPred }) => `
+        <div class="quick-entry-confirm-row">
+          <span>${escapeHTML(match.homeTeam)}</span>
+          <strong>${homePred} : ${awayPred}</strong>
+          <span>${escapeHTML(match.awayTeam)}</span>
+        </div>
+      `).join('');
+      const confirmButton = document.getElementById('quick-entry-confirm-btn');
+      confirmButton.disabled = false;
+      confirmButton.textContent = `${quickEntryConfirmItems.length} Tahmini Kilitle`;
+      document.getElementById('quick-entry-confirm-modal').classList.remove('hidden');
+    }
+
+    function closeQuickEntryConfirm() {
+      document.getElementById('quick-entry-confirm-modal').classList.add('hidden');
+      quickEntryConfirmItems = [];
+    }
+
+    async function confirmQuickEntryPredictions() {
+      const items = quickEntryConfirmItems.slice();
+      if (!items.length || !currentUser) return;
+      const button = document.getElementById('quick-entry-confirm-btn');
+      button.disabled = true;
+      button.textContent = 'Kilitleniyor…';
+      try {
+        await db.runTransaction(async transaction => {
+          const rows = items.map(item => ({
+            ...item,
+            ref: db.collection('predictions').doc(`${currentUser.uid}_${item.match.id}`)
+          }));
+          const snapshots = await Promise.all(rows.map(row => transaction.get(row.ref)));
+          if (snapshots.some(snapshot => snapshot.exists)) {
+            throw new Error('prediction-already-exists');
+          }
+          const now = Date.now();
+          rows.forEach(row => {
+            if (!canPredict(row.match.datetime) || row.match.datetime.getTime() <= now + PREDICTION_CUTOFF_MS) {
+              throw new Error('prediction-closed');
+            }
+            transaction.set(row.ref, {
+              uid: currentUser.uid,
+              matchId: row.match.id,
+              homePred: row.homePred,
+              awayPred: row.awayPred,
+              submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          });
+        });
+        items.forEach(item => { delete quickEntryDrafts[item.match.id]; });
+        closeQuickEntryConfirm();
+        renderQuickEntry();
+        showToast(`${items.length} tahmin kaydedildi ve kilitlendi.`, 'success');
+      } catch (error) {
+        console.error(error);
+        button.disabled = false;
+        button.textContent = `${items.length} Tahmini Kilitle`;
+        if (error.message === 'prediction-already-exists') {
+          showToast('Listedeki maçlardan biri için daha önce tahmin yapılmış.', 'warning');
+        } else if (error.message === 'prediction-closed') {
+          showToast('Listedeki maçlardan birinin tahmin süresi doldu.', 'warning');
+        } else {
+          showToast('Seri tahminler kaydedilemedi.', 'error');
+        }
+      }
     }
 
     // Tracks whether the user opened the "henüz skoru girilmemiş maçlar" panel.
@@ -3232,6 +3597,7 @@
     }
 
     function renderLeaderboard() {
+      syncAutomaticLeaderboardTournament();
       const tbody = document.getElementById('leaderboard-body');
       const podium = document.getElementById('leaderboard-podium');
       const table = document.querySelector('#view-leaderboard .leaderboard-table');
@@ -5974,7 +6340,23 @@
         }
         await batch.commit();
         resetFutureFixturePaging();
-        showToast(`${saved} maç başarıyla kaydedildi.`, 'success');
+        const missingLogoTeams = Array.from(new Set(
+          pendingMatches
+            .flatMap(match => [match.homeTeam, match.awayTeam])
+            .filter(Boolean)
+            .filter(name => !teamLogoUrls[teamLogoSlug(name)])
+        ));
+        let logoMessage = '';
+        if (missingLogoTeams.length) {
+          try {
+            const logoCount = await syncTournamentLogos('', missingLogoTeams);
+            logoMessage = ` ${logoCount} takım logosu otomatik bulundu.`;
+          } catch (logoError) {
+            console.warn('Otomatik takım logosu eşleştirmesi başarısız.', logoError);
+            logoMessage = ' Logolar daha sonra Etiketleri Yönet bölümünden tamamlanabilir.';
+          }
+        }
+        showToast(`${saved} maç başarıyla kaydedildi.${logoMessage}`, 'success');
         pendingMatches = [];
         renderPendingMatches();
       } catch (e) {
@@ -6494,6 +6876,7 @@
     function switchView(view) {
       const views = {
         matches: document.getElementById('view-matches'),
+        'quick-entry': document.getElementById('view-quick-entry'),
         leaderboard: document.getElementById('view-leaderboard'),
         archive: document.getElementById('view-archive'),
         museum: document.getElementById('view-museum'),
@@ -6503,6 +6886,7 @@
 
       const btns = {
         matches: document.getElementById('view-btn-matches'),
+        'quick-entry': document.getElementById('view-btn-quick-entry'),
         leaderboard: document.getElementById('view-btn-leaderboard'),
         archive: document.getElementById('view-btn-archive'),
         museum: document.getElementById('view-btn-museum'),
@@ -6524,11 +6908,14 @@
       currentView = view;
 
       if (view === 'leaderboard') {
+        leaderboardTournamentSelectionAutomatic = true;
+        syncAutomaticLeaderboardTournament();
         // Form/analiz/detay verisi breakdownArchiveDocs önbelleğinden gelir
         // (renderLeaderboard → ensureLeaderboardFormData); ayrıca sayfalı arşivi
         // ön-yüklemeye gerek yok.
         renderLeaderboard();
       }
+      if (view === 'quick-entry') renderQuickEntry();
       if (view === 'archive') {
         // İlk açılışta veya hâlâ eski sabit değerdeyse admin'in varsayılan turnuvasını kullan
         if (!archiveTournamentFilter || archiveTournamentFilter === DEFAULT_TOURNAMENT) {

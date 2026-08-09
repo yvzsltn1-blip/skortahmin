@@ -16,6 +16,7 @@ const TIME_ZONE = "Europe/Istanbul";
 const REMINDER_LEAD_MS = 4 * 60 * 60 * 1000;
 const REMINDER_WINDOW_MS = 5 * 60 * 1000;
 const RESULT_DIGEST_WAIT_MS = 5 * 60 * 1000;
+const OFSAYT_HOST = "ofsayt.com";
 
 function teamLine(match) {
   return `${match.homeTeam || "Ev sahibi"} - ${match.awayTeam || "Deplasman"}`;
@@ -40,6 +41,127 @@ async function isAdminUid(uid) {
   if (!uid) return false;
   const userSnap = await db.collection("users").doc(uid).get();
   return userSnap.exists && userSnap.data().isAdmin === true;
+}
+
+function teamLogoSlug(teamName) {
+  return String(teamName || "")
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ı/g, "i")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, decimal) => String.fromCodePoint(Number(decimal)))
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;|&#39;/g, "'");
+}
+
+async function requireAdminRequest(req) {
+  const authorization = String(req.get("authorization") || "");
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (!match) throw new Error("Oturum doğrulanamadı.");
+  const decoded = await admin.auth().verifyIdToken(match[1]);
+  if (!await isAdminUid(decoded.uid)) throw new Error("Admin yetkisi gerekli.");
+  return decoded.uid;
+}
+
+function validateOfsaytUrl(rawUrl) {
+  const url = new URL(String(rawUrl || "").trim());
+  const hostname = url.hostname.toLocaleLowerCase("en-US");
+  if (url.protocol !== "https:" || (hostname !== OFSAYT_HOST && !hostname.endsWith(`.${OFSAYT_HOST}`))) {
+    throw new Error("Yalnızca https://ofsayt.com puan durumu adresi kullanılabilir.");
+  }
+  return url.toString();
+}
+
+function extractOfsaytWeeks(html) {
+  const marker = "const weeks = ";
+  const markerAt = html.indexOf(marker);
+  if (markerAt < 0) return [];
+  const start = html.indexOf("[", markerAt);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < html.length; i++) {
+    const char = html[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+    if (char === "\"") inString = true;
+    else if (char === "[") depth++;
+    else if (char === "]") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(html.slice(start, i + 1));
+        } catch (_) {
+          return [];
+        }
+      }
+    }
+  }
+  return [];
+}
+
+function logosFromOfsaytPage(html) {
+  const logos = {};
+  const weeks = extractOfsaytWeeks(html);
+  for (const week of weeks) {
+    for (const day of (week && week.dates) || []) {
+      for (const fixture of (day && day.fixtureOfDay) || []) {
+        for (const team of [fixture.homeTeam, fixture.awayTeam]) {
+          if (!team || !team.Name || !team.logo) continue;
+          const slug = teamLogoSlug(team.Name);
+          if (slug && /^https:\/\//i.test(team.logo)) logos[slug] = team.logo;
+        }
+      }
+    }
+  }
+
+  const standingsBlocks = Array.from(
+    html.matchAll(/<tbody[^>]*class=["'][^"']*\bcurrent-stand-tbody\b[^"']*["'][^>]*>[\s\S]*?<\/tbody>/gi),
+    match => match[0]
+  );
+  const standingsHtml = standingsBlocks.join("\n");
+  const logoPattern = /<img(?=[^>]*\bclass=["'][^"']*\bofs-standing-table-team-logo\b[^"']*["'])(?=[^>]*\bsrc=["'](https:\/\/[^"']+)["'])[^>]*>[\s\S]{0,1200}?<a\b[^>]*href=["'][^"']*\/futbol\/takim\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = logoPattern.exec(standingsHtml))) {
+    const teamName = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
+    const slug = teamLogoSlug(teamName);
+    if (slug && !logos[slug]) logos[slug] = decodeHtmlEntities(match[1]);
+  }
+  return logos;
+}
+
+async function findOfsaytTeamLogo(teamName) {
+  const response = await fetch(
+    `https://ofsayt.com/search/${encodeURIComponent(teamName)}?sport=futbol`,
+    { headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } }
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  const candidates = (Array.isArray(data.results) ? data.results : [])
+    .filter(item => item && item.type === "team" && /^https:\/\//i.test(item.logo || ""))
+    .filter(item => !/placeholder/i.test(item.logo));
+  if (!candidates.length) return null;
+
+  const wanted = teamLogoSlug(teamName);
+  const ranked = candidates.map((item, index) => {
+    const candidate = teamLogoSlug(item.name);
+    const score = candidate === wanted
+      ? 0
+      : (candidate.startsWith(`${wanted}-`) || wanted.startsWith(`${candidate}-`) ? 1 : 2);
+    return { item, score, index };
+  }).sort((a, b) => a.score - b.score || a.index - b.index);
+  return ranked[0].item.logo;
 }
 
 async function getResultDigestWaitMs() {
@@ -282,11 +404,8 @@ exports.fetchOddsOnMatchCreate = onDocumentCreated({
 });
 
 // Maç girildiğinde bültende yoksa (çok erken girilmişse) 4 saatte bir yeniden dene.
-exports.retryMissingOdds = onSchedule({
-  region: REGION,
-  schedule: "every 4 hours",
-  timeZone: TIME_ZONE
-}, async () => {
+// scheduledTasks dispatcher'ından çağrılır (bkz. dosya sonu).
+async function retryMissingOddsTask() {
   const nowMs = Date.now();
   const snap = await db.collection("matches")
     .where("finalized", "==", false)
@@ -348,7 +467,7 @@ exports.retryMissingOdds = onSchedule({
       logger.warn("Odds retry failed for match.", { matchId: doc.id, error: String(err) });
     }
   }
-});
+}
 
 // ================== FİKSTÜR TARİH SENKRONU (NESINE) ==================
 // Hafta bazlı girilen (dateTbd:true, datetime = yer tutucu) maçların gerçek
@@ -457,25 +576,17 @@ function writeDateSyncSummary(summary) {
 }
 
 // TFF programı genelde çarşamba açıklanır; haftalık ana koşu.
-exports.fixtureDateSyncWeekly = onSchedule({
-  region: REGION,
-  schedule: "every wednesday 12:00",
-  timeZone: TIME_ZONE
-}, async () => {
+async function fixtureDateSyncWeeklyTask() {
   await proposeFixtureDates("weekly");
-});
+}
 
 // Çarşamba çekilemezse (bülten gecikmesi vb.) 12 saatte bir tekrar dener;
 // penceredeki tüm TBD maçların güncel önerisi varsa bülteni hiç çekmez.
-exports.fixtureDateSyncRetry = onSchedule({
-  region: REGION,
-  schedule: "every 12 hours",
-  timeZone: TIME_ZONE
-}, async () => {
+async function fixtureDateSyncRetryTask() {
   const docs = await pendingTbdMatches();
   if (!docs.some(doc => needsProposal(doc.data()))) return;
   await proposeFixtureDates("retry");
-});
+}
 
 // Admin panelindeki "Nesine'den Tarihleri Çek" butonunun ucu
 // (nesineHealthCheck ile aynı desen: public onRequest + anında sonuç).
@@ -490,6 +601,65 @@ exports.fixtureDateSyncNow = onRequest({
   } catch (err) {
     logger.warn("Manual fixture date sync failed.", { error: String(err) });
     res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// Admin yeni turnuva eklerken Ofsayt puan durumu sayfasından takım-logo
+// eşleşmesini çıkarır. İstemci bu küçük URL haritasını settings/app altında
+// saklar; böylece yeni logolar hosting deploy edilmeden görünür.
+exports.ofsaytTeamLogos = onRequest({
+  region: REGION,
+  invoker: "public",
+  cors: true,
+  timeoutSeconds: 30
+}, async (req, res) => {
+  try {
+    if (req.method !== "POST") {
+      res.status(405).json({ ok: false, error: "POST gerekli." });
+      return;
+    }
+    await requireAdminRequest(req);
+    const logos = {};
+    const rawUrl = String((req.body && req.body.url) || "").trim();
+    const teamNames = Array.from(new Set(
+      (Array.isArray(req.body && req.body.teamNames) ? req.body.teamNames : [])
+        .map(name => String(name || "").trim())
+        .filter(Boolean)
+    )).slice(0, 80);
+    if (!rawUrl && !teamNames.length) throw new Error("Turnuva adresi veya takım adları gerekli.");
+
+    if (rawUrl) {
+      const url = validateOfsaytUrl(rawUrl);
+      const response = await fetch(url, {
+        headers: {
+          "Accept": "text/html,*/*",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+      });
+      if (!response.ok) throw new Error(`Ofsayt HTTP ${response.status}`);
+      Object.assign(logos, logosFromOfsaytPage(await response.text()));
+    }
+
+    // URL verilmeyen kupa/karma turnuvalarda veya sayfada eksik kalan
+    // takımlarda Ofsayt'ın futbol takım aramasıyla ad bazlı tamamla.
+    for (let i = 0; i < teamNames.length; i += 5) {
+      const chunk = teamNames.slice(i, i + 5);
+      const found = await Promise.all(chunk.map(async teamName => ({
+        teamName,
+        logo: await findOfsaytTeamLogo(teamName)
+      })));
+      for (const item of found) {
+        const slug = teamLogoSlug(item.teamName);
+        if (slug && item.logo) logos[slug] = item.logo;
+      }
+    }
+    const count = Object.keys(logos).length;
+    if (!count) throw new Error("Takım logosu bulunamadı.");
+    res.json({ ok: true, count, logos });
+  } catch (err) {
+    logger.warn("Ofsayt logo sync failed.", { error: String(err) });
+    const authError = /Oturum|Admin/.test(String(err && err.message));
+    res.status(authError ? 403 : 400).json({ ok: false, error: err.message || String(err) });
   }
 });
 
@@ -940,13 +1110,79 @@ async function sweepPendingScores() {
   return report;
 }
 
-exports.autoFetchScores = onSchedule({
-  region: REGION,
-  schedule: "every 30 minutes",
-  timeZone: TIME_ZONE
-}, async () => {
+async function autoFetchScoresTask() {
   const report = await sweepPendingScores();
   if (report.length) logger.info("Score sweep completed.", { report });
+}
+
+// ================== TEK SCHEDULER JOB (MALİYET) ==================
+// Cloud Scheduler faturalama hesabı başına yalnızca 3 job ücretsiz; sonrası
+// job başına ~$0.10/ay. Bu yüzden dört ayrı zamanlanmış iş, 30 dakikada bir
+// koşan TEK bir job'ın içinde kendi periyotlarına göre tetikleniyor.
+const SCHEDULER_STATE_DOC = "schedulerState";
+
+// Her görevin en son ne zaman koştuğunu settings/schedulerState altında tutar.
+async function runIfDue(state, key, minIntervalMs, task) {
+  const last = state[key];
+  const lastMs = last && last.toMillis ? last.toMillis() : 0;
+  // Job her 30 dk'da bir tetiklendiği için tetikleme jitter'ı periyodu
+  // kaydırmasın diye 1 dakikalık tolerans bırakıyoruz.
+  if (Date.now() - lastMs < minIntervalMs - 60 * 1000) return false;
+  await task();
+  await db.collection("settings").doc(SCHEDULER_STATE_DOC)
+    .set({ [key]: FieldValue.serverTimestamp() }, { merge: true });
+  return true;
+}
+
+// "her çarşamba 12:00" karşılığı: İstanbul saatiyle çarşamba 12:00'den sonraki
+// ilk tetiklemede koşar, o hafta bir daha koşmaz.
+function isWeeklySlot(state) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIME_ZONE,
+    weekday: "short",
+    hour: "2-digit",
+    hour12: false
+  }).formatToParts(new Date());
+  const weekday = parts.find(p => p.type === "weekday").value;
+  const hour = Number(parts.find(p => p.type === "hour").value);
+  if (weekday !== "Wed" || hour < 12) return false;
+  const last = state.fixtureDateSyncWeekly;
+  const lastMs = last && last.toMillis ? last.toMillis() : 0;
+  return Date.now() - lastMs > 6 * 24 * 60 * 60 * 1000;
+}
+
+exports.scheduledTasks = onSchedule({
+  region: REGION,
+  schedule: "every 30 minutes",
+  timeZone: TIME_ZONE,
+  timeoutSeconds: 540
+}, async () => {
+  const snap = await db.collection("settings").doc(SCHEDULER_STATE_DOC).get();
+  const state = snap.exists ? snap.data() : {};
+
+  // Bir görevin hatası diğerlerini engellemesin.
+  const tasks = [
+    ["autoFetchScores", 30 * 60 * 1000, autoFetchScoresTask],
+    ["retryMissingOdds", 4 * 60 * 60 * 1000, retryMissingOddsTask],
+    ["fixtureDateSyncRetry", 12 * 60 * 60 * 1000, fixtureDateSyncRetryTask]
+  ];
+  for (const [key, intervalMs, task] of tasks) {
+    try {
+      await runIfDue(state, key, intervalMs, task);
+    } catch (err) {
+      logger.error("Scheduled task failed.", { task: key, error: String(err) });
+    }
+  }
+
+  if (isWeeklySlot(state)) {
+    try {
+      await fixtureDateSyncWeeklyTask();
+      await db.collection("settings").doc(SCHEDULER_STATE_DOC)
+        .set({ fixtureDateSyncWeekly: FieldValue.serverTimestamp() }, { merge: true });
+    } catch (err) {
+      logger.error("Scheduled task failed.", { task: "fixtureDateSyncWeekly", error: String(err) });
+    }
+  }
 });
 
 // APK bildirimleri kullanılmadığı için otomatik bildirim fonksiyonları devre dışı

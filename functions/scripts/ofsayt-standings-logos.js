@@ -33,12 +33,22 @@ async function main() {
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   const html = await res.text();
 
-  // logo img'ini izleyen ilk <span>Takim Adi</span> ile eslestir.
-  const re = /<img src="(https:\/\/[^"]+)" class="ofs-standing-table-team-logo" \/>[\s\S]*?<span>([^<]+)<\/span>/g;
+  // Sayfada aynı logo sınıfı fikstür ve haber kartlarında da kullanılıyor.
+  // Yalnızca puan durumu sekmelerinin tbody bloklarını tara.
+  const standingsBlocks = Array.from(
+    html.matchAll(/<tbody[^>]*class=["'][^"']*\bcurrent-stand-tbody\b[^"']*["'][^>]*>[\s\S]*?<\/tbody>/gi),
+    match => match[0]
+  );
+  if (!standingsBlocks.length) throw new Error("Sayfada puan durumu tablosu bulunamadi.");
+  const standingsHtml = standingsBlocks.join("\n");
+
+  // Güncel tabloda takım adı logodan sonraki takım detay <a> etiketinde.
+  // Sınıf/özellik sırası değişse de aynı tablo hücresi içinde eşleşmeye devam etsin.
+  const re = /<img(?=[^>]*\bclass=["'][^"']*\bofs-standing-table-team-logo\b[^"']*["'])(?=[^>]*\bsrc=["'](https:\/\/[^"']+)["'])[^>]*>[\s\S]{0,1200}?<a\b[^>]*href=["'][^"']*\/futbol\/takim\/[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
   const teams = new Map();
   let m;
-  while ((m = re.exec(html))) {
-    const name = decodeEntities(m[2].trim());
+  while ((m = re.exec(standingsHtml))) {
+    const name = decodeEntities(m[2].replace(/<[^>]+>/g, "").trim());
     if (name && !teams.has(name)) teams.set(name, m[1]);
   }
   if (!teams.size) throw new Error("Sayfada takim logosu bulunamadi.");

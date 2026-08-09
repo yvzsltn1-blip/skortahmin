@@ -214,6 +214,10 @@
             <span class="icon">📅</span>
             <span>Maçlar</span>
           </button>
+          <button onclick="switchView('quick-entry')" id="view-btn-quick-entry" class="nav-btn" title="Seri Maç Girişi">
+            <span class="icon">⚡</span>
+            <span>Seri Giriş</span>
+          </button>
           <button onclick="switchView('leaderboard')" id="view-btn-leaderboard" class="nav-btn">
             <span class="icon">🏆</span>
             <span>Puan Durumu</span>
@@ -277,6 +281,31 @@
           <p class="section-subtitle" style="margin-bottom: 0.75rem;">Oynanan/oynanmakta olan, skoru ve puanları henüz girilmemiş maçlar. Skor girilince arşive taşınır. Aşağıda kimin ne tahmin ettiğini görebilirsin.</p>
           <div id="pending-results-list"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- QUICK PREDICTION ENTRY VIEW -->
+    <div id="view-quick-entry" class="hidden">
+      <div class="quick-entry-header">
+        <div>
+          <div class="quick-entry-kicker">HIZLI TAHMİN</div>
+          <h2 class="section-title">Seri Maç Girişi<span id="quick-entry-count" class="badge-count"></span></h2>
+          <p class="section-subtitle">Skorları sırayla gir; hepsini son ekranda birlikte kontrol edip kilitle.</p>
+        </div>
+        <select id="quick-entry-tournament-filter" class="input-field tournament-filter" onchange="onQuickEntryFilterChange(this.value)"></select>
+      </div>
+
+      <div id="quick-entry-list" class="quick-entry-shell"></div>
+
+      <div id="quick-entry-actionbar" class="quick-entry-actionbar hidden">
+        <div class="quick-entry-draft-summary">
+          <span class="quick-entry-draft-dot"></span>
+          <strong id="quick-entry-draft-count">0</strong>
+          <span>hazır tahmin</span>
+        </div>
+        <button type="button" class="btn btn-primary quick-entry-review-btn" onclick="openQuickEntryConfirm()">
+          Kontrol Et ve Kilitle
+        </button>
       </div>
     </div>
 
@@ -933,6 +962,22 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>
           Evet, Kilitle
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seri Tahmin Toplu Onay Modalı -->
+  <div id="quick-entry-confirm-modal" class="modal-overlay hidden" onclick="if (event.target.id === 'quick-entry-confirm-modal') closeQuickEntryConfirm()">
+    <div class="modal-card quick-entry-confirm-card" onclick="event.stopImmediatePropagation()">
+      <div class="quick-entry-confirm-head">
+        <span class="predict-confirm-tag">SERİ MAÇ GİRİŞİ</span>
+        <h3>Tahminleri Kilitle</h3>
+        <p>Aşağıdaki tahminler tek seferde kaydedilecek ve sonradan değiştirilemeyecek.</p>
+      </div>
+      <div id="quick-entry-confirm-list" class="quick-entry-confirm-list"></div>
+      <div class="quick-entry-confirm-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeQuickEntryConfirm()">Geri Dön</button>
+        <button id="quick-entry-confirm-btn" type="button" class="btn btn-primary" onclick="confirmQuickEntryPredictions()">Hepsini Kilitle</button>
       </div>
     </div>
   </div>
