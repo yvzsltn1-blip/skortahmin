@@ -344,18 +344,27 @@
 
       <!-- Tam sıralama tablosu -->
       <div class="leaderboard-card">
-        <table class="leaderboard-table">
-          <thead>
-            <tr>
-              <th style="width: 60px;">#</th>
-              <th>Kullanıcı · Form · Seri</th>
-              <th style="text-align: right; min-width: 110px;">Puan</th>
-            </tr>
-          </thead>
-          <tbody id="leaderboard-body">
-            <!-- Populated by JS -->
-          </tbody>
-        </table>
+        <div class="lb-table-head">
+          <div>
+            <span class="lb-section-kicker">GENEL SIRALAMA</span>
+            <h2 class="lb-table-title">Takipteki Oyuncular</h2>
+          </div>
+          <span class="lb-table-hint">Form ve seri durumları canlı güncellenir</span>
+        </div>
+        <div class="lb-table-wrap">
+          <table class="leaderboard-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">#</th>
+                <th>Kullanıcı · Form · Seri</th>
+                <th style="text-align: right; min-width: 110px;">Puan</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div class="lb-form-legend" aria-label="Form açıklaması">
@@ -368,24 +377,27 @@
         <span class="lb-form-legend-item"><span class="formdot-taphint">👆</span> Noktalara tıkla → maç detayı</span>
       </div>
 
-      <div class="leaderboard-analysis-card">
+      <div class="leaderboard-analysis-card analysis-card--performance">
         <div class="leaderboard-analysis-head">
-          <div class="leaderboard-analysis-icon">📊</div>
-          <div>
+          <div class="leaderboard-analysis-icon" aria-hidden="true">📊</div>
+          <div class="leaderboard-analysis-heading">
+            <span class="lb-section-kicker">PERFORMANS DAĞILIMI</span>
             <div class="leaderboard-analysis-title">Detaylı Puan Analizi</div>
-            <div class="leaderboard-analysis-subtitle">Tam skor, sonuç ve yaklaşma isabetleri ayrı hesaplanır; mevcut puan durumu toplamına dokunmaz.</div>
+            <div class="leaderboard-analysis-subtitle">Tam skor, sonuç ve yaklaşma isabetlerinin oyuncu bazında dağılımı.</div>
           </div>
         </div>
         <div id="leaderboard-analysis"></div>
       </div>
 
-      <div class="leaderboard-analysis-card">
+      <div class="leaderboard-analysis-card analysis-card--scores">
         <div class="leaderboard-analysis-head">
-          <div class="leaderboard-analysis-icon">🔢</div>
-          <div>
+          <div class="leaderboard-analysis-icon" aria-hidden="true">🔢</div>
+          <div class="leaderboard-analysis-heading">
+            <span class="lb-section-kicker">TAHMİN TRENDLERİ</span>
             <div class="leaderboard-analysis-title">En Çok Söylenen Skorlar</div>
-            <div class="leaderboard-analysis-subtitle">1-3 ve 3-1 aynı skor kabul edilir; satırlar toplam tahmin sayısına göre sıralanır.</div>
+            <div class="leaderboard-analysis-subtitle">Tüm oyuncuların skor tercihlerini karşılaştır; başlıklara dokunarak sırala.</div>
           </div>
+          <span class="score-frequency-swipe-hint" aria-hidden="true">Yatay kaydır →</span>
         </div>
         <div id="score-frequency-analysis"></div>
       </div>

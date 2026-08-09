@@ -3521,6 +3521,7 @@
       const container = document.getElementById('score-frequency-analysis');
       if (!container) return;
       const { userRows, scoreRows, totalPredictions } = collectScoreFrequencyStats();
+      const maxScoreTotal = Math.max(...scoreRows.map(row => row.total), 1);
       if (!scoreRows.length || !userRows.length) {
         container.innerHTML = `<div class="leaderboard-empty">Skor analizi için henüz tahmin yok.</div>`;
         return;
@@ -3546,7 +3547,7 @@
             : `<td><span class="score-frequency-zero">·</span></td>`;
         }).join('');
         return `
-          <tr>
+          <tr style="--score-share: ${Math.round((row.total / maxScoreTotal) * 100)}%">
             <td>
               <span class="score-frequency-score-cell">
                 <span class="score-frequency-rank ${rankClass}">${idx + 1}</span>
@@ -3559,7 +3560,7 @@
       }).join('');
 
       container.innerHTML = `
-        <div class="score-frequency-wrap">
+        <div class="score-frequency-wrap" tabindex="0" aria-label="Skor sıklığı karşılaştırma tablosu">
           <table class="score-frequency-table">
             <thead>
               <tr>
@@ -3635,7 +3636,7 @@
             analysisMatchesRegistry.push({ matches: userMatches, ...cats });
             const regIdx = analysisMatchesRegistry.length - 1;
             return `
-            <div class="analysis-row">
+            <div class="analysis-row ${currentUser && row.uid === currentUser.uid ? 'is-me' : ''}">
               <div class="analysis-row-head">
                 <div class="analysis-row-rank">${idx + 1}</div>
                 <div class="analysis-row-name">${escapeHTML(row.displayName)}</div>
@@ -3665,6 +3666,8 @@
       const tbody = document.getElementById('leaderboard-body');
       const podium = document.getElementById('leaderboard-podium');
       const table = document.querySelector('#view-leaderboard .leaderboard-table');
+      const card = document.querySelector('#view-leaderboard .leaderboard-card');
+      const tableHint = document.querySelector('#view-leaderboard .lb-table-hint');
       if (!tbody) return;
       tbody.innerHTML = '';
       if (podium) podium.innerHTML = '';
@@ -3720,7 +3723,9 @@
 
       if (rows.length === 0) {
         if (podium) podium.classList.add('empty');
+        if (card) card.style.display = '';
         if (table) table.style.display = '';
+        if (tableHint) tableHint.textContent = 'Sonuçlar geldikçe sıralama burada oluşacak';
         tbody.innerHTML = `<tr><td colspan="3" class="leaderboard-empty">Henüz puan yok. Admin maç sonucunu ve puanlarını girdikçe tablo güncellenir.</td></tr>`;
         return;
       }
@@ -3753,10 +3758,12 @@
       // ---- Kalan sıralama: 4. sıradan itibaren tabloda ----
       const rest = rows.slice(PODIUM_COUNT);
       if (rest.length === 0) {
-        if (table) table.style.display = 'none';
+        if (card) card.style.display = 'none';
         return;
       }
+      if (card) card.style.display = '';
       if (table) table.style.display = '';
+      if (tableHint) tableHint.textContent = `${rest.length} oyuncu · Form ve seriler canlı güncellenir`;
 
       rest.forEach((row, i) => {
         const rank = PODIUM_COUNT + i + 1;
