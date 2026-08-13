@@ -46,6 +46,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Hafta bonusu sonuçları: Cloud Function yazar (kurallardan muaf), admin
+    // "Puanları Yeniden Hesapla" ile elle de yazabilir; herkes okuyabilir.
+    match /weekBonus/{bonusRoundId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
     // Sezon bonus tahminleri: config dokümanları admin tarafından yönetilir,
     // kullanıcılar yalnızca giriş açıkken kendi tahmin dokümanlarını yazabilir.
     match /bonus/{bonusId} {

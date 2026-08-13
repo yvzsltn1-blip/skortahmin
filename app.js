@@ -93,7 +93,11 @@
     // her açılışta yalnızca bugünden itibaren bu kadar gün ilerideki maçlar + onların
     // tahminleri okunur. Skor girilen geçmiş maçlar finalized:true olup arşive düşer
     // ve canlı dinleyiciden çıkar; böylece okuma maliyeti haftalık fikstürle sınırlı kalır.
-    const ACTIVE_MATCH_WINDOW_DAYS = 9;  // ~1 maç haftası + tampon (istersen değiştir)
+    // Hafta bazlı fikstürde bir hafta bitince sıradaki hafta ANINDA açılmalı; milli
+    // ara / kupa haftası gibi boşluklarda sıradaki hafta 2 haftadan uzağa düşebildiği
+    // için pencere geniş tutulur. Ekstra okunan maçlar yalnızca hafta hesabı içindir;
+    // tahminleri okunmaz (subscribeActivePredictions sadece görünen maçlara abone olur).
+    const ACTIVE_MATCH_WINDOW_DAYS = 24;
 
     // Archive pagination state (optimized mode, user-facing + admin)
     const ARCHIVE_PAGE_SIZE = 20;
@@ -142,6 +146,7 @@
         dt: m.datetime ? m.datetime.getTime() : null,
         fa: matchFinalizedAtMs(m),
         wk: m.week != null ? m.week : null,
+        st: m.stage || null,
         // Yaklaşma tavanı (%85) yeniden hesapta da uygulanabilsin diye oranlar saklanır
         od: m.odds ? {
           ms: m.odds.ms || null,
@@ -166,6 +171,7 @@
         datetime: s.dt != null ? new Date(s.dt) : null,
         finalizedAtMs: s.fa || 0,
         week: s.wk != null ? s.wk : null,
+        stage: s.st || null,
         odds: s.od || undefined
       };
     }
@@ -340,9 +346,316 @@
       return !!match.datetime && match.datetime.getTime() < Date.now();
     }
 
+    // ================== HAFTA / AŞAMA (ROUND) MODELİ ==================
+    // Bir maçın turnuva içindeki sırası iki şekilde verilebilir:
+    //   • `week`  — lig aşaması hafta numarası (1..MAX_WEEK_NO)
+    //   • `stage` — eleme turu adı ("Çeyrek Final" vb.), lig haftalarından SONRA gelir
+    // Her ikisi de tek bir sayıya (`roundOrder`) indirgenir; fikstür kapısı, hafta
+    // bonusu ve arşiv sekmeleri hep bu sayı üzerinden çalışır. Eleme turları
+    // STAGE_ORDER_BASE'ten başlar, böylece hiçbir hafta numarasıyla çakışmaz.
+    // Bu liste functions/index.js içindeki kopyayla birebir aynı kalmalı.
+    const KNOCKOUT_STAGES = ['Play-Off', 'Son 16', 'Çeyrek Final', 'Yarı Final', 'Final'];
+    const STAGE_ORDER_BASE = 1000;
+    const MAX_WEEK_NO = 60;
+
+    function stageOrderOf(stage) {
+      const index = KNOCKOUT_STAGES.indexOf(String(stage || '').trim());
+      return index < 0 ? null : STAGE_ORDER_BASE + index;
+    }
+
+    function roundOrderOf(match) {
+      const stage = stageOrderOf(match && match.stage);
+      if (stage != null) return stage;
+      const week = Number(match && match.week);
+      return Number.isInteger(week) && week >= 1 && week <= MAX_WEEK_NO ? week : null;
+    }
+
+    function roundLabelOf(match) {
+      const stage = String((match && match.stage) || '').trim();
+      if (stageOrderOf(stage) != null) return stage;
+      const week = Number(match && match.week);
+      return Number.isInteger(week) && week >= 1 ? `${week}. Hafta` : '';
+    }
+
+    // roundOrder -> etiket (maç nesnesi elde yokken, ör. arşiv sekmeleri).
+    function roundLabelFromOrder(order) {
+      if (order == null) return '';
+      return order >= STAGE_ORDER_BASE
+        ? (KNOCKOUT_STAGES[order - STAGE_ORDER_BASE] || 'Eleme Turu')
+        : `${order}. Hafta`;
+    }
+
+    // Hafta/aşama seçicisinin <option> listesi — admin formlarının hepsi bunu kullanır.
+    function roundOptionsHTML(selectedOrder) {
+      let html = '<option value="">— seçin —</option>';
+      // Kupa/eleme turnuvalarında hafta hiç kullanılmaz; iki grup da etiketli ki
+      // 60 hafta seçeneği arasında eleme turları kaybolmasın.
+      html += '<optgroup label="Lig Haftaları">';
+      for (let week = 1; week <= MAX_WEEK_NO; week++) {
+        html += `<option value="${week}"${selectedOrder === week ? ' selected' : ''}>${week}. Hafta</option>`;
+      }
+      html += '</optgroup><optgroup label="Eleme Turları">';
+      KNOCKOUT_STAGES.forEach((stage, index) => {
+        const order = STAGE_ORDER_BASE + index;
+        html += `<option value="${order}"${selectedOrder === order ? ' selected' : ''}>${escapeHTML(stage)}</option>`;
+      });
+      html += '</optgroup>';
+      return html;
+    }
+
+    // Seçici değerini Firestore alanlarına çevirir. Geçersiz/boş seçimde null döner.
+    // `forUpdate` true ise boş kalan alan silinir (update yükünde kalıntı bırakmamak için).
+    function roundFieldsFromOrder(rawOrder, forUpdate = false) {
+      const order = parseInt(rawOrder, 10);
+      if (!Number.isInteger(order)) return null;
+      const clear = forUpdate ? firebase.firestore.FieldValue.delete() : null;
+      if (order >= STAGE_ORDER_BASE) {
+        const stage = KNOCKOUT_STAGES[order - STAGE_ORDER_BASE];
+        return stage ? { week: clear, stage } : null;
+      }
+      return order >= 1 && order <= MAX_WEEK_NO ? { week: order, stage: clear } : null;
+    }
+
+    // Yeni doküman/bekleyen maç nesnesi için: yalnızca dolu alanı taşır.
+    function roundFieldsAsData(rawOrder) {
+      const fields = roundFieldsFromOrder(rawOrder);
+      if (!fields) return {};
+      return fields.stage ? { stage: fields.stage } : { week: fields.week };
+    }
+
+    // ================== HAFTA BONUSU ==================
+    // Bir turun TÜM maçları sonuçlandığında, maç sonucunu (1/X/2) doğru bilen
+    // sayısına göre ek puan verilir. Kural turnuva bazlıdır ve
+    // settings/app.weekBonus[turnuva] = { enabled, tiers:[{correct,points}] } ile
+    // tanımlanır; tanımsız turnuvada bonus yoktur.
+    //
+    // Kuralın tek gerçek sahibi Cloud Function'dır (weekBonusOnMatchWrite) —
+    // buradaki kopya yalnızca (a) "Puanları Yeniden Hesapla" ve (b) legacy mod
+    // toplamları için kullanılır. İki kopya birebir aynı mantığı taşımalı.
+    let weekBonusRules = {};        // settings/app.weekBonus
+    let weekBonusDocsById = null;   // weekBonus koleksiyonu (gösterim için, tembel yüklenir)
+    let weekBonusLoading = false;
+    let weekBonusLoadedEpoch = null;
+
+    function weekBonusDocId(tournament, roundOrder) {
+      return `${encodeURIComponent(tournament)}__${roundOrder}`;
+    }
+
+    function weekBonusTiersFor(tournament) {
+      const config = weekBonusRules && weekBonusRules[tournament];
+      if (!config || config.enabled === false) return null;
+      const tiers = (Array.isArray(config.tiers) ? config.tiers : [])
+        .map(tier => ({ correct: Number(tier.correct), points: Number(tier.points) }))
+        .filter(tier => Number.isInteger(tier.correct) && tier.correct > 0 && Number.isFinite(tier.points))
+        .sort((a, b) => b.correct - a.correct);
+      return tiers.length ? tiers : null;
+    }
+
+    function weekBonusPointsFor(correct, tiers) {
+      const tier = tiers.find(t => correct >= t.correct);
+      return tier ? tier.points : 0;
+    }
+
+    // Maç listesini turnuva+tur kovalarına ayırıp her tamamlanmış tur için
+    // bonusları hesaplar. Maçların `scoreboard` alanı ({uid,name,h,a}) dolu olmalı.
+    function computeAllWeekBonuses(matchList) {
+      const buckets = new Map();
+      matchList.forEach(match => {
+        const order = roundOrderOf(match);
+        if (order == null) return;
+        const tournament = tournamentOf(match);
+        if (!weekBonusTiersFor(tournament)) return;
+        const key = `${tournament}|${order}`;
+        if (!buckets.has(key)) buckets.set(key, { tournament, roundOrder: order, matches: [] });
+        buckets.get(key).matches.push(match);
+      });
+
+      const docs = [];
+      buckets.forEach(bucket => {
+        const tiers = weekBonusTiersFor(bucket.tournament);
+        // Ertelenen maç turu tamamlanmamış bırakır → bonus o maç oynanana kadar verilmez.
+        const complete = bucket.matches.length > 0 && bucket.matches.every(m =>
+          m.finalized === true && m.homeScore != null && m.awayScore != null);
+
+        const awards = {};
+        if (complete) {
+          const correctCounts = {};
+          const names = {};
+          bucket.matches.forEach(match => {
+            const actual = Math.sign(match.homeScore - match.awayScore);
+            (Array.isArray(match.scoreboard) ? match.scoreboard : []).forEach(entry => {
+              if (!entry || !entry.uid || entry.h == null || entry.a == null) return;
+              names[entry.uid] = entry.name || names[entry.uid] || 'Oyuncu';
+              if (Math.sign(entry.h - entry.a) === actual) {
+                correctCounts[entry.uid] = (correctCounts[entry.uid] || 0) + 1;
+              }
+            });
+          });
+          Object.entries(correctCounts).forEach(([uid, correct]) => {
+            const points = weekBonusPointsFor(correct, tiers);
+            if (points) awards[uid] = { name: names[uid] || 'Oyuncu', correct, points };
+          });
+        }
+
+        docs.push({
+          id: weekBonusDocId(bucket.tournament, bucket.roundOrder),
+          tournament: bucket.tournament,
+          roundOrder: bucket.roundOrder,
+          roundLabel: roundLabelFromOrder(bucket.roundOrder),
+          matchCount: bucket.matches.length,
+          complete,
+          awards
+        });
+      });
+      return docs;
+    }
+
+    // Legacy modda toplamlar canlı hesaplandığı için bonuslar da yerelde çıkarılır
+    // (bu modda tüm maçlar ve tahminler zaten bellekte).
+    function legacyWeekBonusDocs() {
+      if (optimizedMode) return [];
+      return computeAllWeekBonuses(matches.map(match => ({
+        ...match,
+        finalized: match.homeScore != null && match.awayScore != null,
+        scoreboard: getPredictionsForMatch(match.id)
+          .map(pred => ({ uid: pred.uid, h: pred.homePred, a: pred.awayPred }))
+      })));
+    }
+
+    // Gösterim için weekBonus koleksiyonunu tembel yükler (sezon başına ~40 doküman).
+    async function ensureWeekBonusDocs(onLoaded) {
+      if (!optimizedMode) {
+        weekBonusDocsById = Object.fromEntries(legacyWeekBonusDocs().map(d => [d.id, d]));
+        return weekBonusDocsById;
+      }
+      if (weekBonusDocsById && weekBonusLoadedEpoch === archiveEpoch) return weekBonusDocsById;
+      if (weekBonusLoading) return null;
+      weekBonusLoading = true;
+      try {
+        const snap = await db.collection('weekBonus').get();
+        weekBonusDocsById = {};
+        snap.docs.forEach(doc => {
+          weekBonusDocsById[doc.id] = { id: doc.id, ...doc.data(), awards: doc.data().awards || {} };
+        });
+        weekBonusLoadedEpoch = archiveEpoch;
+        if (onLoaded) onLoaded();
+        return weekBonusDocsById;
+      } catch (e) {
+        // Her render'da yeniden denememek için boş sonuçla işaretle.
+        console.warn('Hafta bonusları okunamadı.', e);
+        weekBonusDocsById = {};
+        weekBonusLoadedEpoch = archiveEpoch;
+        return null;
+      } finally {
+        weekBonusLoading = false;
+      }
+    }
+
+    // Bir turun bonus şeridi (arşiv hafta görünümünde gösterilir).
+    function weekBonusBannerHTML(tournament, roundOrder) {
+      const tiers = weekBonusTiersFor(tournament);
+      if (!tiers) return '';
+      const doc = weekBonusDocsById && weekBonusDocsById[weekBonusDocId(tournament, roundOrder)];
+      const tierText = tiers.map(t => `${t.correct}+ doğru: +${formatPoints(t.points)}`).join(' • ');
+
+      if (!doc || !doc.complete) {
+        return `
+          <div class="week-bonus-banner pending">
+            <span class="week-bonus-icon">🏅</span>
+            <div class="week-bonus-text">
+              <strong>Hafta Bonusu bekliyor</strong>
+              <span>Turun tüm maçları sonuçlanınca dağıtılır (ertelenen maç dahil). ${escapeHTML(tierText)}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      const winners = Object.values(doc.awards)
+        .sort((a, b) => b.points - a.points || (a.name || '').localeCompare(b.name || '', 'tr'));
+      if (!winners.length) {
+        return `
+          <div class="week-bonus-banner">
+            <span class="week-bonus-icon">🏅</span>
+            <div class="week-bonus-text">
+              <strong>Hafta Bonusu: kimse alamadı</strong>
+              <span>${escapeHTML(tierText)}</span>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="week-bonus-banner won">
+          <span class="week-bonus-icon">🏅</span>
+          <div class="week-bonus-text">
+            <strong>Hafta Bonusu</strong>
+            <span class="week-bonus-winners">${winners.map(w =>
+              `<span class="week-bonus-chip">${escapeHTML(w.name)} <b>${w.correct}/${doc.matchCount}</b> +${formatPoints(w.points)}</span>`
+            ).join('')}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // ---- Hafta/aşama bazlı fikstür kapısı ----
+    // Bir turnuvanın "aktif turu", sonucu henüz girilmemiş maçı olan en küçük
+    // roundOrder'dır. Turun son maçının sonucu girilince aktif tur kendiliğinden
+    // bir sonrakine kayar ve o tur listelenir. Hafta/aşama bilgisi olmayan maçlar
+    // (hazırlık vb.) eski gün penceresini kullanır.
+    function matchIsScored(match) {
+      return match.finalized === true || (match.homeScore != null && match.awayScore != null);
+    }
+
+    function computeActiveWeeks() {
+      const active = {};
+      matches.forEach(match => {
+        const order = roundOrderOf(match);
+        if (order == null || matchIsScored(match)) return;
+        // Ertelenen maç turu kilitlemez: yeni tarihi haftalar sonrasına düşebildiği
+        // için tüm ligi bekletmek yerine kendi başına ("telafi maçı") gösterilir.
+        // Hafta BONUSU ise onu bekler — bkz. computeAllWeekBonuses.
+        if (match.postponed === true) return;
+        const tournament = tournamentOf(match);
+        if (active[tournament] == null || order < active[tournament]) {
+          active[tournament] = order;
+        }
+      });
+      return active;
+    }
+
+    // `matches` dizisi her onSnapshot'ta baştan kurulduğu için dizi kimliği
+    // önbellek anahtarı olarak yeterli.
+    let activeWeekCache = { source: null, map: {} };
+    function activeWeeks() {
+      if (activeWeekCache.source !== matches) {
+        activeWeekCache = { source: matches, map: computeActiveWeeks() };
+      }
+      return activeWeekCache.map;
+    }
+
+    function activeWeekOf(tournament) {
+      const order = activeWeeks()[tournament];
+      return order == null ? null : order;
+    }
+
+    // Hafta/aşama bilgisi olan maç yalnızca turnuvasının aktif turundaysa görünür.
+    function isWeekVisible(match) {
+      // Ertelenen maç geçmiş bir tura ait olsa da her zaman görünür (telafi maçı).
+      if (match.postponed === true) return true;
+      const order = roundOrderOf(match);
+      if (order == null) return true;
+      const active = activeWeekOf(tournamentOf(match));
+      return active == null || order === active;
+    }
+
     // Main page shows only matches inside the admin-configured window
-    // (undated matches stay visible).
+    // (undated matches stay visible). Hafta/aşama bazlı maçlarda pencere yerine
+    // aktif tur kuralı geçerlidir; tarihi netleşmemiş (dateTbd) maç listelenmez.
     function isUpcomingMatch(match) {
+      if (roundOrderOf(match) != null) {
+        if (!isWeekVisible(match)) return false;
+        if (match.dateTbd) return false;
+        return !match.datetime || match.datetime.getTime() >= Date.now();
+      }
       if (!match.datetime) return true;
       const t = match.datetime.getTime();
       const now = Date.now();
@@ -617,6 +930,9 @@
     function nextVisibleMatches() {
       let list = matches
         .filter(match => match.datetime && !isPendingResultMatch(match))
+        // Geri sayım da fikstürle aynı kapıdan geçer: kapalı hafta / tarihi
+        // netleşmemiş maç "sıradaki maç" olarak gösterilmez.
+        .filter(match => isWeekVisible(match) && !match.dateTbd)
         .filter(match => match.homeScore == null || match.awayScore == null)
         .filter(match => match.datetime.getTime() >= Date.now());
       if (fixtureTournamentFilter !== ALL_TOURNAMENTS) {
@@ -1032,6 +1348,12 @@
       fillFilter('leaderboard-tournament-filter', leaderboardTournamentFilter, false);
       renderTournamentManager();
       renderArchiveTournamentTabs();
+      // Turnuva başına ayar listeleri de aynı listeden beslenir; burada çizilirler
+      // ki turnuva eklendiğinde/pasife alındığında anında güncellensinler.
+      if (isAdmin) {
+        renderOfsaytFixtureUrls();
+        renderWeekBonusRules();
+      }
     }
 
     function renderTournamentManager() {
@@ -1449,7 +1771,8 @@
       }
       const hint = document.getElementById('upcoming-window-hint');
       if (hint) {
-        hint.textContent = `Şu an Maçlar sayfasında önümüzdeki ${upcomingWindowDays} günün maçları listeleniyor.`;
+        hint.textContent = `Hafta numarası OLMAYAN maçlarda (kupa, hazırlık vb.) önümüzdeki ${upcomingWindowDays} gün listeleniyor. `
+          + 'Hafta numarası olan lig maçları bu ayardan etkilenmez: yalnızca aktif hafta gösterilir.';
       }
     }
 
@@ -1544,6 +1867,11 @@
         allowedEmails = data.allowedEmails || [];
         teamLogoUrls = data.teamLogos && typeof data.teamLogos === 'object' ? data.teamLogos : {};
         celebrationData = data.celebration || null;
+        ofsaytFixtureUrls = data.ofsaytFixtureUrls && typeof data.ofsaytFixtureUrls === 'object'
+          ? data.ofsaytFixtureUrls : {};
+        weekBonusRules = data.weekBonus && typeof data.weekBonus === 'object' ? data.weekBonus : {};
+        // Bu iki listenin çizimi refreshTournamentUI() içinde — turnuva listesi
+        // bu callback'in ilerisinde kuruluyor, burada çizersek boş kalırdı.
 
         // Fikstür penceresi (gün): admin panelinden ayarlanır, herkeste anında geçerli olur.
         const configuredWindow = Number(data.upcomingWindowDays);
@@ -1634,7 +1962,12 @@
           .onSnapshot(snapshot => {
             matches = snapshot.docs.map(mapMatchDoc)
               .sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
-            subscribeActivePredictions(matches.map(m => m.id));
+            // Tahminler yalnızca ekranda görünen maçlar için okunur: kapalı
+            // haftaların (aktif hafta dışı) maçları pencereye girse bile
+            // tahmin dinleyicisi açmaz.
+            subscribeActivePredictions(
+              matches.filter(m => isUpcomingMatch(m) || isPendingResultMatch(m)).map(m => m.id)
+            );
             renderAll();
           }, err => console.error(err));
         // Archive is fetched on demand (paginated); seed the first page lazily.
@@ -1810,10 +2143,55 @@
     }
 
     // Uzun takım adlarında yazıyı kademeli küçültür (satır atlamaz, taşmaz).
+    // Eşikler ölçüme göre belirlendi: masaüstü kartında ad sütununa yaklaşık
+    // 8 karakter tam boyda sığıyor. Eski eşik (>11) "Galatasaray", "Trabzonspor",
+    // "Ç. Rizespor" gibi TAM 11 karakterlik adları tam boyda bırakıp "Galatas…"
+    // şeklinde kırpılmalarına yol açıyordu.
     function teamNameSpan(teamName) {
       const name = String(teamName || '').trim();
-      const sizeClass = name.length > 18 ? ' name-xlong' : name.length > 11 ? ' name-long' : '';
+      const sizeClass = name.length > 16
+        ? ' name-xxlong'
+        : name.length > 12
+          ? ' name-xlong'
+          : name.length > 8
+            ? ' name-long'
+            : '';
       return `<span class="team-name-text${sizeClass}">${escapeHTML(name)}</span>`;
+    }
+
+    // Aktif haftası açık olup gün/saati henüz gelmemiş turnuvaların listesi.
+    // (Tarihler Nesine/Ofsayt senkronuyla düştüğü anda maçlar fikstüre girer.)
+    function pendingWeekDateNotices() {
+      const byTournament = new Map();
+      matches.forEach(match => {
+        if (!match.dateTbd || matchIsScored(match)) return;
+        const order = roundOrderOf(match);
+        if (order == null || !isWeekVisible(match)) return;
+        const tournament = tournamentOf(match);
+        if (fixtureTournamentFilter !== ALL_TOURNAMENTS && tournament !== fixtureTournamentFilter) return;
+        const key = `${tournament}|${order}`;
+        if (!byTournament.has(key)) {
+          byTournament.set(key, { tournament, order, label: roundLabelOf(match), count: 0 });
+        }
+        byTournament.get(key).count++;
+      });
+      return Array.from(byTournament.values()).sort((a, b) => a.order - b.order);
+    }
+
+    function renderWeekDateNotices(container, notices) {
+      if (!notices.length) return;
+      notices.forEach(notice => {
+        const box = document.createElement('div');
+        box.className = 'week-pending-notice';
+        box.innerHTML = `
+          <span class="week-pending-icon">🗓</span>
+          <div class="week-pending-text">
+            <strong>${escapeHTML(notice.tournament)} • ${escapeHTML(notice.label)}</strong>
+            <span>${notice.count} maçın gün ve saati bekleniyor. Tarihler açıklanınca hafta otomatik açılacak.</span>
+          </div>
+        `;
+        container.appendChild(box);
+      });
     }
 
     function renderMatches() {
@@ -1830,19 +2208,27 @@
         upcomingMatches = upcomingMatches.filter(m => tournamentOf(m) === fixtureTournamentFilter);
       }
 
+      // Aktif haftası açılmış ama tarihleri henüz netleşmemiş turnuvalar:
+      // maçlar listelenmez, bunun yerine "tarih bekleniyor" bilgisi gösterilir.
+      const awaitingDates = pendingWeekDateNotices();
+
       if (!upcomingMatches.length) {
         noMatches.classList.remove('hidden');
         document.getElementById('matches-count').textContent = '';
         const desc = noMatches.querySelector('.no-data-desc');
         if (desc) {
-          desc.textContent = matches.length
-            ? `Önümüzdeki ${upcomingWindowDays} günde maç yok. Geçmiş maçlar Arşiv sekmesinde.`
-            : 'Admin maç ekleyene kadar lütfen bekleyin.';
+          desc.textContent = awaitingDates.length
+            ? 'Sıradaki haftanın gün ve saatleri açıklanır açıklanmaz maçlar burada listelenecek.'
+            : matches.length
+              ? `Şu an tahmine açık maç yok. Haftanın son maçı sonuçlandığında bir sonraki hafta açılır.`
+              : 'Admin maç ekleyene kadar lütfen bekleyin.';
         }
+        renderWeekDateNotices(container, awaitingDates);
         return;
       }
       noMatches.classList.add('hidden');
       document.getElementById('matches-count').textContent = `${upcomingMatches.length}`;
+      renderWeekDateNotices(container, awaitingDates);
 
       const userPreds = Object.fromEntries(
         allPredictions
@@ -1864,7 +2250,7 @@
       groupedMatches.forEach(dayMatches => {
         const first = dayMatches[0];
         const heading = first.dateTbd
-          ? (first.week ? `${first.week}. Hafta • Gün ve saat açıklanmadı` : 'Gün ve saat açıklanmadı')
+          ? (roundLabelOf(first) ? `${roundLabelOf(first)} • Gün ve saat açıklanmadı` : 'Gün ve saat açıklanmadı')
           : formatDayHeading(first.datetime);
         const section = document.createElement('section');
         section.className = 'day-group';
@@ -2011,7 +2397,7 @@
                 <div class="match-status-badge ${statusClass}"${open && !hasResult ? ' aria-label="Tahmine açık" title="Tahmine açık"' : ''}>${statusBadgeText}</div>
                 <div class="match-time">${formatted}</div>
                 ${match.postponed ? `<div class="match-status-badge status-closed">Ertelendi</div>` : ''}
-                ${match.week && !match.dateTbd ? `<div class="match-week-pill">${match.week}. Hafta</div>` : ''}
+                ${roundLabelOf(match) && !match.dateTbd ? `<div class="match-week-pill">${escapeHTML(roundLabelOf(match))}</div>` : ''}
                 <div class="match-tournament-label">${tournamentBadge(match)}</div>
               </div>
 
@@ -2452,7 +2838,7 @@
             <div class="match-header">
               <div class="match-status-badge status-completed">${hasResult ? 'Tamamlandı' : 'Sonuç Bekleniyor'}</div>
               <div class="match-time">${escapeHTML(formatted)}</div>
-              ${match.week ? `<div class="match-week-pill">${match.week}. Hafta</div>` : ''}
+              ${roundLabelOf(match) ? `<div class="match-week-pill">${escapeHTML(roundLabelOf(match))}</div>` : ''}
               <div class="match-tournament-label">${tournamentBadge(match)}</div>
             </div>
 
@@ -2656,11 +3042,12 @@
 
       const inTournament = archiveWeekSourceDocs().filter(m =>
         archiveTournamentFilter === ALL_TOURNAMENTS || tournamentOf(m) === archiveTournamentFilter);
-      const weeks = Array.from(new Set(
-        inTournament.map(m => m.week).filter(w => w != null)
+      // Hafta numaraları ve eleme turları tek sıralamada (roundOrder) toplanır.
+      const rounds = Array.from(new Set(
+        inTournament.map(roundOrderOf).filter(order => order != null)
       )).sort((a, b) => a - b);
 
-      if (!weeks.length) {
+      if (!rounds.length) {
         container.innerHTML = '';
         container.classList.add('hidden');
         archiveWeekFilter = null;
@@ -2669,8 +3056,8 @@
 
       container.classList.remove('hidden');
       let html = `<button type="button" class="tournament-tab ${archiveWeekFilter == null ? 'active' : ''}" onclick="selectArchiveWeek(null)">📅 Tarihe Göre</button>`;
-      weeks.forEach(w => {
-        html += `<button type="button" class="tournament-tab ${archiveWeekFilter === w ? 'active' : ''}" onclick="selectArchiveWeek(${w})">${w}. Hafta</button>`;
+      rounds.forEach(order => {
+        html += `<button type="button" class="tournament-tab ${archiveWeekFilter === order ? 'active' : ''}" onclick="selectArchiveWeek(${order})">${escapeHTML(roundLabelFromOrder(order))}</button>`;
       });
       container.innerHTML = html;
     }
@@ -2683,11 +3070,11 @@
 
     function renderArchiveWeekView(container, countEl) {
       const docs = archiveWeekSourceDocs()
-        .filter(m => m.week === archiveWeekFilter)
+        .filter(m => roundOrderOf(m) === archiveWeekFilter)
         .filter(m => archiveTournamentFilter === ALL_TOURNAMENTS || tournamentOf(m) === archiveTournamentFilter)
         .sort((a, b) => (a.datetime?.getTime() || 0) - (b.datetime?.getTime() || 0));
 
-      if (countEl) countEl.textContent = `${archiveWeekFilter}. Hafta • ${docs.length} maç`;
+      if (countEl) countEl.textContent = `${roundLabelFromOrder(archiveWeekFilter)} • ${docs.length} maç`;
 
       if (!docs.length) {
         container.innerHTML = breakdownArchiveLoading || formArchiveEnsureStarted
@@ -2696,7 +3083,14 @@
         return;
       }
 
-      container.innerHTML = docs.map(m => {
+      // Tek turnuva seçiliyken o turun hafta bonusu şeridi başa eklenir.
+      let bonusHTML = '';
+      if (archiveTournamentFilter !== ALL_TOURNAMENTS) {
+        ensureWeekBonusDocs(() => { if (currentView === 'archive') renderArchive(); });
+        bonusHTML = weekBonusBannerHTML(archiveTournamentFilter, archiveWeekFilter);
+      }
+
+      container.innerHTML = bonusHTML + docs.map(m => {
         const sb = Array.isArray(m.scoreboard) ? m.scoreboard : [];
         const picksHTML = sb.length ? renderScoreboardPicks(sb, m) : renderFriendsPicks(m.id);
         const count = sb.length || getPredictionsForMatch(m.id).length;
@@ -3693,6 +4087,14 @@
           if (!pointsMap[p.uid]) pointsMap[p.uid] = 0;
           pointsMap[p.uid] += pts;
         });
+        // Hafta bonusu: optimize modda aggregate'e Cloud Function işler, legacy
+        // modda toplamlar canlı hesaplandığı için burada eklenir.
+        legacyWeekBonusDocs().forEach(doc => {
+          if (tFilter !== ALL_TOURNAMENTS && doc.tournament !== tFilter) return;
+          Object.entries(doc.awards).forEach(([uid, award]) => {
+            pointsMap[uid] = (pointsMap[uid] || 0) + award.points;
+          });
+        });
       }
 
       // Onaylanmış sezon bonus tahmin puanları (settings/bonus) toplamlara eklenir.
@@ -4156,6 +4558,46 @@
         </div>`;
     }
 
+    // Hafta bonusu rehber bölümü. Eşikler turnuva bazlı ayarlanabildiği için
+    // metin sabit değil: kural açık olan turnuvaların GERÇEK eşikleri yazılır,
+    // hiçbiri açık değilse varsayılan örnek gösterilir.
+    function weekBonusGuideSection() {
+      const configured = activeTournaments()
+        .map(tournament => ({ tournament, tiers: weekBonusTiersFor(tournament) }))
+        .filter(item => item.tiers);
+
+      const tierLine = (tiers) => tiers
+        .map(tier => `<b>${tier.correct} doğru → +${formatPoints(tier.points)}</b>`)
+        .join(' · ');
+
+      const tableHTML = configured.length
+        ? `<ul class="guide-list">${configured.map(item =>
+            `<li>${escapeHTML(item.tournament)}: ${tierLine(item.tiers)}</li>`).join('')}</ul>`
+        : `<p class="guide-mini-note">Şu an hiçbir turnuvada açık değil. Açıldığında eşikler burada görünür.</p>`;
+
+      const example = configured[0] || { tournament: 'Süper Lig', tiers: DEFAULT_WEEK_BONUS_TIERS };
+      const top = example.tiers[0];
+
+      return guideSection('weekbonus', '🏅', 'Hafta bonusu', 'Haftanın tamamını bilene ek puan.', `
+        <p>Bir turun (<b>hafta</b> ya da <b>eleme aşaması</b>) bütün maçları sonuçlandığında, o turda
+        <b>maç sonucunu (1 / X / 2) doğru bildiğin maç sayısına</b> göre üstüne ek puan yazılır.
+        Skoru bilmen gerekmez — sadece tarafı tutturman yeter.</p>
+        ${tableHTML}
+        <ul class="guide-list">
+          <li>Yalnızca <b>tahmin yaptığın</b> maçlar sayılır; tahmin etmediğin maç doğru sayılmaz.</li>
+          <li>Bonus <b>tur bittiğinde</b> tek seferde yazılır, maç maç değil.</li>
+          <li><b>Ertelenen maç varsa bonus bekler.</b> O maç oynanıp sonucu girildiğinde tur tamamlanır
+          ve bonus geriye dönük dağıtılır. Bu arada fikstür durmaz, sonraki hafta normal açılır.</li>
+          <li>Derbi ×2 çarpanı bu bonusa <b>uygulanmaz</b>; hafta bonusu sabit puandır.</li>
+          <li>Sadece kuralın açık olduğu turnuvalarda geçerlidir.</li>
+        </ul>
+        ${guideExample(`${escapeHTML(example.tournament)} · ${top.correct} maçlık haftada`, [
+          [`${top.correct} maçın ${top.correct}'inde de sonucu bildin`, `+${formatPoints(top.points)}`],
+          ['Maçlardan topladığın normal puanlar', 'ayrıca eklenir']
+        ], 'Hafta bonusu', `+${formatPoints(top.points)}`, 'gold')}
+      `);
+    }
+
     function pointsGuideHTML() {
       const formulaBox = `
         <div class="guide-formula">
@@ -4262,6 +4704,8 @@
           eski maçların puanları değişmez.</p>
         `)}
 
+        ${weekBonusGuideSection()}
+
         ${guideSection('bonus', '🏁', 'Sezon başı sıralama tahmini', 'Sezon açılışında yapılan büyük tahmin.', `
           <p>Admin bir turnuvaya bonus tahmin açtığında, sezon başında <b>ligin bitiş sıralamasını</b>
           tahmin edersin (örneğin <b>ilk 6 + son 3</b>). Bazı turnuvalarda sadece <b>şampiyon</b> sorulur.
@@ -4305,8 +4749,8 @@
 
         <div class="guide-footer-note">
           Kısacası: <b>tarafı tutturmadan puan yok</b>, sürprizi görmek çok kazandırır,
-          tam skor her şeyin üstünde. Derbilerde ikiye katlanır, sezon başı tahminin de
-          finalde cebine girer.
+          tam skor her şeyin üstünde. Derbilerde ikiye katlanır, haftanın tamamını bilmek
+          ayrıca ödüllendirilir, sezon başı tahminin de finalde cebine girer.
         </div>`;
     }
 
@@ -5330,10 +5774,11 @@
       const groups = new Map();
       entries.forEach(entry => {
         const match = entry.match;
-        // Haftası girilmiş maçlar hafta başlığı altında toplanır (turnuva bazında),
-        // haftasızlar bugünkü gibi güne göre gruplanır.
-        const key = match.week != null
-          ? `w|${tournamentOf(match)}|${match.week}`
+        // Haftası/aşaması girilmiş maçlar tur başlığı altında toplanır (turnuva
+        // bazında), tursuzlar bugünkü gibi güne göre gruplanır.
+        const order = roundOrderOf(match);
+        const key = order != null
+          ? `w|${tournamentOf(match)}|${order}`
           : getDayKey(match.datetime);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(entry);
@@ -5352,8 +5797,9 @@
       visibleGroups.forEach((dayEntries, idx) => {
         dayEntries.sort((a, b) => (a.match.datetime?.getTime() || 0) - (b.match.datetime?.getTime() || 0));
         const firstMatch = dayEntries[0].match;
-        const title = firstMatch.week != null
-          ? `${firstMatch.week}. Hafta${firstMatch.dateTbd ? ' — tarih bekleniyor' : ` — ${formatDayHeading(firstMatch.datetime)}`}`
+        const roundTitle = roundLabelOf(firstMatch);
+        const title = roundTitle
+          ? `${roundTitle}${firstMatch.dateTbd ? ' — tarih bekleniyor' : ` — ${formatDayHeading(firstMatch.datetime)}`}`
           : formatDayHeading(firstMatch.datetime);
         const missing = dayEntries.reduce((sum, item) => sum + (item.missingCount || 0), 0);
         const meta = `
@@ -5471,7 +5917,7 @@
             <div class="admin-match-sub">
               <span class="admin-match-date">${formatted}</span>
               ${tournamentBadge(match)}
-              ${match.week ? `<span class="admin-mini-pill">${match.week}. Hafta</span>` : ''}
+              ${roundLabelOf(match) ? `<span class="admin-mini-pill">${escapeHTML(roundLabelOf(match))}</span>` : ''}
               ${derbyMultiplier(match) === 2 ? `<span class="admin-mini-pill warn" title="Puan alanlarına ham oranı gir; ×2 çarpanı puan hesabında otomatik uygulanır">🔥 Derbi ×2 (otomatik)</span>` : ''}
               ${match.postponed ? `<span class="admin-mini-pill warn">Ertelendi</span>` : (match.dateTbd ? `<span class="admin-mini-pill warn">tarih onay bekliyor</span>` : '')}
               ${hasResult ? `<span class="admin-mini-pill">sonuç girildi</span>` : ''}
@@ -5494,8 +5940,8 @@
                 <input id="res-time-${match.id}" type="text" value="${timeAttr}" placeholder="SS:dd" class="score-number-input time-field" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
               </div>
               <div class="admin-mini-field">
-                <label>Hafta</label>
-                <input id="res-week-${match.id}" type="number" min="1" max="60" value="${match.week || ''}" placeholder="—" class="score-number-input" onfocus="this.select()" onkeydown="handleAdminScoreKey(event, '${match.id}')">
+                <label>Hafta / Aşama</label>
+                <select id="res-week-${match.id}" class="score-number-input round-select">${roundOptionsHTML(roundOrderOf(match))}</select>
               </div>
               ${!hasResult ? `<button onclick="postponeMatch('${match.id}')" class="btn btn-sm btn-secondary" title="Tarihi belirsize al (yeni tarih Nesine'den önerilir)">⏸ Ertele</button>` : ''}
             </div>
@@ -5831,6 +6277,202 @@
       return raw.toDate ? raw.toDate() : new Date(raw);
     }
 
+    // ---- Ofsayt fikstür adresleri (turnuva -> lig sayfası) ----
+    // Cloud Function, Nesine bülteninde bulunamayan hafta maçlarının gün/saatini
+    // buradaki adresteki gömülü fikstür verisinden okuyup doğrudan uygular.
+    let ofsaytFixtureUrls = {};
+    let ofsaytFixtureUrlsOpen = false;
+
+    // Ofsayt lig adresi iki GUID taşır: /futbol/lig/<slug>/<LİG-ID>/detay/puan-durumu/<SEZON-ID>
+    // LİG-ID kalıcı, SEZON-ID her sezon değişir; sezon parçası atılınca sayfa hep
+    // GÜNCEL sezona çözülür. functions/index.js'teki kopyayla aynı tutulmalı.
+    const OFSAYT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    function normalizeOfsaytFixtureUrl(rawUrl) {
+      try {
+        const url = new URL(String(rawUrl || '').trim());
+        const parts = url.pathname.split('/').filter(Boolean);
+        const ligAt = parts.indexOf('lig');
+        if (ligAt < 0 || !OFSAYT_GUID_RE.test(parts[ligAt + 2] || '')) return url.toString();
+        url.pathname = '/' + parts.slice(0, ligAt + 3).concat('detay', 'puan-durumu').join('/');
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+      } catch (e) {
+        return String(rawUrl || '').trim();
+      }
+    }
+
+    function toggleOfsaytFixtureUrls() {
+      ofsaytFixtureUrlsOpen = !ofsaytFixtureUrlsOpen;
+      renderOfsaytFixtureUrls();
+    }
+
+    function renderOfsaytFixtureUrls() {
+      const container = document.getElementById('ofsayt-fixture-urls');
+      if (!container) return;
+      if (!ofsaytFixtureUrlsOpen) { container.innerHTML = ''; return; }
+
+      const list = activeTournaments();
+      if (!list.length) {
+        container.innerHTML = `<div class="empty-badge">Turnuva etiketi yok.</div>`;
+        return;
+      }
+      container.innerHTML = list.map((tournament, index) => {
+        const url = ofsaytFixtureUrls[tournament] || '';
+        return `
+          <div class="date-proposal-row">
+            <div class="date-proposal-info">
+              <span class="pending-teams">${escapeHTML(tournament)}</span>
+              <span class="proposal-placeholder">${url ? escapeHTML(url) : 'adres yok — yalnızca Nesine denenir'}</span>
+            </div>
+            <div class="date-proposal-actions">
+              <button onclick="editOfsaytFixtureUrl(${index})" class="btn btn-sm btn-secondary">${url ? 'Değiştir' : 'Ekle'}</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function editOfsaytFixtureUrl(index) {
+      if (!isAdmin) return;
+      const tournament = activeTournaments()[index];
+      if (!tournament) return;
+      const current = ofsaytFixtureUrls[tournament] || '';
+      const input = prompt(
+        `"${tournament}" için Ofsayt.com lig fikstür adresi:\n`
+        + 'Örn: https://ofsayt.com/futbol/turkiye/super-lig\n'
+        + 'Boş bırakıp OK dersen adres silinir.',
+        current
+      );
+      if (input == null) return;
+      const raw = input.trim();
+      if (raw && !/^https:\/\/([a-z0-9-]+\.)*ofsayt\.com\//i.test(raw)) {
+        showToast('Yalnızca https://ofsayt.com adresi kullanılabilir.', 'warning');
+        return;
+      }
+      const url = raw ? normalizeOfsaytFixtureUrl(raw) : '';
+      if (url && url !== raw) {
+        showToast('Adresteki sezon kimliği kaldırıldı — böylece her sezon güncel fikstürü okur.', 'success');
+      }
+      try {
+        const ref = db.collection('settings').doc('app');
+        if (url) {
+          await ref.set({ ofsaytFixtureUrls: { [tournament]: url } }, { merge: true });
+        } else {
+          // merge:true iç içe haritayı birleştirdiği için silme FieldPath ile yapılır
+          // (turnuva adında nokta/boşluk olabildiğinden düz string yol kullanılmaz).
+          await ref.update(
+            new firebase.firestore.FieldPath('ofsaytFixtureUrls', tournament),
+            firebase.firestore.FieldValue.delete()
+          );
+        }
+        showToast(url ? 'Fikstür adresi kaydedildi.' : 'Fikstür adresi silindi.', 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Adres kaydedilemedi: ' + (e.message || e), 'error');
+      }
+    }
+
+    // ---- Hafta bonusu kuralları (admin) ----
+    const DEFAULT_WEEK_BONUS_TIERS = [
+      { correct: 9, points: 30 },
+      { correct: 8, points: 20 },
+      { correct: 7, points: 10 }
+    ];
+
+    function weekBonusTierText(tiers) {
+      return (tiers || []).map(tier => `${tier.correct}:${formatPoints(tier.points)}`).join(', ');
+    }
+
+    // "9:30, 8:20, 7:10" → [{correct:9,points:30}, …]. Geçersizse null.
+    function parseWeekBonusTierText(text) {
+      const tiers = String(text || '').split(',')
+        .map(part => part.trim()).filter(Boolean)
+        .map(part => {
+          const m = /^(\d{1,2})\s*[:=]\s*(-?\d+(?:[.,]\d+)?)$/.exec(part);
+          if (!m) return null;
+          return { correct: parseInt(m[1], 10), points: parseFloat(m[2].replace(',', '.')) };
+        });
+      if (!tiers.length || tiers.some(t => !t || !Number.isFinite(t.points) || t.correct < 1)) return null;
+      return tiers.sort((a, b) => b.correct - a.correct);
+    }
+
+    function renderWeekBonusRules() {
+      const container = document.getElementById('week-bonus-rules');
+      if (!container) return;
+      const list = activeTournaments();
+      if (!list.length) {
+        container.innerHTML = `<div class="empty-badge">Turnuva etiketi yok.</div>`;
+        return;
+      }
+      container.innerHTML = list.map((tournament, index) => {
+        const tiers = weekBonusTiersFor(tournament);
+        const status = tiers
+          ? `<span class="proposal-new-date">${escapeHTML(weekBonusTierText(tiers))}</span>`
+          : `<span class="proposal-placeholder">bonus kapalı</span>`;
+        return `
+          <div class="date-proposal-row${tiers ? ' pending' : ''}">
+            <div class="date-proposal-info">
+              <span class="pending-teams">${escapeHTML(tournament)}</span>
+              ${status}
+            </div>
+            <div class="date-proposal-actions">
+              <button onclick="editWeekBonusRule(${index})" class="btn btn-sm btn-secondary">${tiers ? 'Değiştir' : 'Aç'}</button>
+              ${tiers ? `<button onclick="clearWeekBonusRule(${index})" class="btn btn-sm btn-secondary">Kapat</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function editWeekBonusRule(index) {
+      if (!isAdmin) return;
+      const tournament = activeTournaments()[index];
+      if (!tournament) return;
+      const current = weekBonusTiersFor(tournament) || DEFAULT_WEEK_BONUS_TIERS;
+      const input = prompt(
+        `"${tournament}" hafta bonusu eşikleri:\n`
+        + 'Biçim: "doğru:puan" çiftleri, virgülle. Örn: 9:30, 8:20, 7:10\n'
+        + '(Bir turun TÜM maçları sonuçlandığında, maç sonucunu doğru bilen sayısına göre verilir.)',
+        weekBonusTierText(current)
+      );
+      if (input == null) return;
+      const tiers = parseWeekBonusTierText(input);
+      if (!tiers) {
+        showToast('Biçim hatalı. Örnek: 9:30, 8:20, 7:10', 'warning');
+        return;
+      }
+      try {
+        await db.collection('settings').doc('app').set({
+          weekBonus: { [tournament]: { enabled: true, tiers } }
+        }, { merge: true });
+        // Kural değişikliği tek başına geçmiş turları yeniden puanlamaz (tetikleyici
+        // maç yazılarına bağlı); tamamlanmış turlara geriye dönük uygulamak için
+        // "Puanları Yeniden Hesapla" gerekir.
+        showToast(`"${tournament}" hafta bonusu kaydedildi. Tamamlanmış haftalara da işlemek için "🔁 Puanları Yeniden Hesapla" çalıştır.`, 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Kaydedilemedi: ' + (e.message || e), 'error');
+      }
+    }
+
+    async function clearWeekBonusRule(index) {
+      if (!isAdmin) return;
+      const tournament = activeTournaments()[index];
+      if (!tournament) return;
+      if (!confirm(`"${tournament}" hafta bonusu kapatılsın mı?\nDaha önce dağıtılmış bonus puanları, ilgili turların sonuçları bir sonraki değişimde yeniden hesaplanana kadar toplamlarda kalır — kesin temizlik için "Puanları Yeniden Hesapla" çalıştır.`)) return;
+      try {
+        await db.collection('settings').doc('app').set({
+          weekBonus: { [tournament]: { enabled: false } }
+        }, { merge: true });
+        showToast(`"${tournament}" hafta bonusu kapatıldı.`, 'success');
+      } catch (e) {
+        console.error(e);
+        showToast('Kapatılamadı: ' + (e.message || e), 'error');
+      }
+    }
+
     async function loadDateProposals() {
       if (!isAdmin) return;
       const container = document.getElementById('date-proposals-list');
@@ -5871,7 +6513,7 @@
         const proposal = proposalDateOf(m);
         const isPending = m.proposalStatus === 'pending';
         const urgent = !isPending && m.datetime && (m.datetime.getTime() - nowMs) < 48 * 60 * 60 * 1000;
-        const weekPill = m.week ? `<span class="admin-mini-pill">${m.week}. Hafta</span>` : '';
+        const weekPill = roundLabelOf(m) ? `<span class="admin-mini-pill">${escapeHTML(roundLabelOf(m))}</span>` : '';
         const postponedPill = m.postponed ? `<span class="admin-mini-pill warn">Ertelendi</span>` : '';
         const statusHTML = isPending
           ? `<span class="proposal-new-date">→ ${escapeHTML(formatProposalDate(proposal))}</span>
@@ -5977,23 +6619,28 @@
     async function requestFixtureDateSync() {
       if (!isAdmin) return;
       const btn = document.getElementById('date-sync-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Nesine bülteni taranıyor…'; }
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Tarihler taranıyor…'; }
       try {
         const res = await fetch('https://europe-west1-aefy-lig.cloudfunctions.net/fixtureDateSyncNow');
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || 'Bilinmeyen hata');
+        const applied = Number(data.applied) || 0;
         if (!data.checked) {
-          showToast('Tarih bekleyen maç yok (önümüzdeki 10 gün penceresinde).', 'success');
+          showToast('Tarih bekleyen maç yok (aktif hafta ve sonraki hafta tam).', 'success');
+        } else if (applied && data.proposed) {
+          showToast(`${applied} maçın tarihi Ofsayt'tan uygulandı, ${data.proposed} maç için Nesine önerisi onay bekliyor.`, 'success');
+        } else if (applied) {
+          showToast(`${applied} maçın tarihi Ofsayt fikstüründen uygulandı.`, 'success');
         } else if (data.proposed) {
           showToast(`${data.proposed} maç için tarih bulundu — aşağıdan onaylayabilirsin.`, 'success');
         } else {
-          showToast(`Tarih bulunamadı; ${data.unmatched} maç henüz Nesine bülteninde yok.`, 'warning');
+          showToast(`Tarih bulunamadı; ${data.unmatched} maç ne Nesine bülteninde ne Ofsayt fikstüründe eşleşti.`, 'warning');
         }
         loadDateProposals();
       } catch (err) {
         showToast('Tarih kontrolü başarısız: ' + (err.message || err), 'error');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "🔄 Nesine'den Tarihleri Çek"; }
+        if (btn) { btn.disabled = false; btn.textContent = '🔄 Tarihleri Çek (Nesine + Ofsayt)'; }
       }
     }
 
@@ -6104,6 +6751,40 @@
           }
           if (++ops >= 400) flush();
         }
+
+        // ---- Hafta bonusları ----
+        // Tam yeniden hesap toplamları sıfırdan kurduğu için bonus puanları da
+        // burada baştan hesaplanır; aksi halde Cloud Function'ın işlediği bonuslar
+        // kaybolurdu. weekBonus dokümanları da yeniden yazılır ki tetikleyicinin
+        // "önceki durum" karşılaştırması tutarlı kalsın.
+        const bonusDocs = computeAllWeekBonuses(
+          allMatches.map(m => ({
+            ...m,
+            tournament: tournamentOf(m),
+            scoreboard: (m.homeScore != null && m.awayScore != null)
+              ? computeScoreboard(m, predsByMatch[m.id] || []).scoreboard
+              : [],
+            finalized: m.homeScore != null && m.awayScore != null
+          }))
+        );
+        bonusDocs.forEach(doc => {
+          const bucket = (totalsByTournament[doc.tournament] = totalsByTournament[doc.tournament] || {});
+          Object.entries(doc.awards).forEach(([uid, award]) => {
+            totals[uid] = (totals[uid] || 0) + award.points;
+            bucket[uid] = (bucket[uid] || 0) + award.points;
+          });
+          batch.set(db.collection('weekBonus').doc(doc.id), {
+            tournament: doc.tournament,
+            roundOrder: doc.roundOrder,
+            roundLabel: doc.roundLabel,
+            matchCount: doc.matchCount,
+            complete: doc.complete,
+            awards: doc.awards,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          if (++ops >= 400) flush();
+        });
+
         batch.set(db.collection('settings').doc('leaderboard'), {
           totals,
           totalsByTournament,
@@ -6318,17 +6999,24 @@
         return;
       }
 
-      const weekRaw = parseInt(document.getElementById(`res-week-${matchId}`)?.value || '', 10);
+      const knownMatch = matches.find(m => m.id === matchId) || futureFixtureDocs.find(m => m.id === matchId);
+      const roundRaw = document.getElementById(`res-week-${matchId}`)?.value || '';
+      const roundFields = roundFieldsFromOrder(roundRaw, true);
+      // Hafta/aşama artık zorunlu; ancak eski (tursuz) kayıtların düzenlenmesi
+      // kilitlenmesin diye zorunluluk yalnızca zaten turu olan maçlarda uygulanır.
+      if (!roundFields && knownMatch && roundOrderOf(knownMatch) != null) {
+        showToast('Hafta / aşama boş bırakılamaz.', 'error');
+        return;
+      }
       const data = {
         datetime: firebase.firestore.Timestamp.fromDate(nextDateTime),
-        week: weekRaw >= 1 ? weekRaw : firebase.firestore.FieldValue.delete(),
+        ...(roundFields || {}),
         outcomePoints: isNaN(op) ? null : op,
         scorePoints: isNaN(sp) ? null : sp
       };
 
       // TBD/ertelenmiş maçta admin tarihi elle değiştirdiyse tarih artık resmidir:
       // yer tutucu bayrakları ve bekleyen öneri temizlenir.
-      const knownMatch = matches.find(m => m.id === matchId) || futureFixtureDocs.find(m => m.id === matchId);
       if (knownMatch?.dateTbd && knownMatch.datetime && nextDateTime.getTime() !== knownMatch.datetime.getTime()) {
         data.dateTbd = firebase.firestore.FieldValue.delete();
         data.postponed = firebase.firestore.FieldValue.delete();
@@ -6517,11 +7205,18 @@
         return;
       }
 
-      const weekNo = parseInt(document.getElementById('add-week')?.value || '', 10);
+      // Hafta/aşama zorunlu: fikstür kapısı ve hafta bonusu bu bilgiye dayanır.
+      const roundFields = roundFieldsFromOrder(document.getElementById('add-week')?.value);
+      if (!roundFields) {
+        showToast('Hafta / aşama seçin — bu alan zorunlu.', 'error');
+        return;
+      }
+
       pendingMatches.push({
         dateStr: formatDateInput(dt), timeStr, homeTeam: home, awayTeam: away,
         tournament: selectedTournament,
-        ...(weekNo >= 1 ? { week: weekNo } : {})
+        ...(roundFields.week ? { week: roundFields.week } : {}),
+        ...(roundFields.stage ? { stage: roundFields.stage } : {})
       });
       renderPendingMatches();
 
@@ -6574,7 +7269,7 @@
               <span class="t-away">${escapeHTML(m.awayTeam)}</span>
             </span>
             <span class="tournament-badge tournament-badge-sm">${escapeHTML((m.tournament && String(m.tournament).trim()) || DEFAULT_TOURNAMENT)}</span>
-            ${m.week ? `<span class="admin-mini-pill">${m.week}. Hafta</span>` : ''}
+            ${roundLabelOf(m) ? `<span class="admin-mini-pill">${escapeHTML(roundLabelOf(m))}</span>` : ''}
             ${m.dateTbd ? `<span class="admin-mini-pill warn">tarih onaylanacak</span>` : ''}
           </div>
           <button onclick="removePending(${idx})" class="btn-remove-pending">Sil</button>
@@ -6639,6 +7334,7 @@
           awayScore: null,
           finalized: false,
           ...(m.week ? { week: m.week } : {}),
+          ...(m.stage ? { stage: m.stage } : {}),
           ...(m.dateTbd ? { dateTbd: true } : {}),
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -6751,27 +7447,37 @@
       };
       const isScore = (line) => /^\d{1,2}\s*[-:–]\s*\d{1,2}$/.test(line);
 
-      // "1. Hafta" / "Hafta 5" başlıkları: sonraki maçlara hafta numarası atanır ve
-      // başlık altındaki tarihler TFF yer tutucusu sayıldığından dateTbd işaretlenir.
+      // "1. Hafta" / "Hafta 5" ya da eleme turu adı ("Çeyrek Final", "Son 16" …)
+      // başlıkları: sonraki maçlara o tur atanır ve başlık altındaki tarihler resmi
+      // program yerine yer tutucu sayıldığından dateTbd işaretlenir.
+      // Dönen değer roundOrder'dır (hafta no ya da STAGE_ORDER_BASE+i).
+      const stageHeaderOrder = (line) => {
+        const normalized = line.toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+        const index = KNOCKOUT_STAGES.findIndex(stage =>
+          stage.toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ') === normalized);
+        return index < 0 ? null : STAGE_ORDER_BASE + index;
+      };
+
       const matchWeekHeader = (line) => {
         const m = /^(?:(\d{1,2})\s*\.?\s*hafta|hafta\s*(\d{1,2}))$/i.exec(
           line.toLocaleLowerCase('tr-TR').trim()
         );
-        return m ? parseInt(m[1] || m[2], 10) : null;
+        if (m) return parseInt(m[1] || m[2], 10);
+        return stageHeaderOrder(line);
       };
 
       const results = [];
       let currentDateStr = null;
       let currentTime = null;
       let pendingHome = null;
-      let currentWeek = null;
+      let currentRound = null;
 
       for (const line of lines) {
         const lower = line.toLocaleLowerCase('tr-TR');
 
-        const weekNo = matchWeekHeader(line);
-        if (weekNo) {
-          currentWeek = weekNo;
+        const roundOrder = matchWeekHeader(line);
+        if (roundOrder) {
+          currentRound = roundOrder;
           currentDateStr = null;
           currentTime = null;
           pendingHome = null;
@@ -6806,7 +7512,7 @@
             timeStr: currentTime || '12:00',
             homeTeam: pendingHome,
             awayTeam: line,
-            ...(currentWeek ? { week: currentWeek, dateTbd: true } : {})
+            ...(currentRound ? { ...roundFieldsAsData(currentRound), dateTbd: true } : {})
           });
           pendingHome = null;
           currentTime = null;
@@ -6827,14 +7533,20 @@
         return;
       }
 
-      // Metinde hafta başlığı yoksa opsiyonel "Hafta no" alanı tüm batch'e uygulanır.
+      // Metinde hafta/aşama başlığı yoksa seçicideki değer tüm batch'e uygulanır.
       // Elle girilen tarihler gerçek kabul edilir; dateTbd yalnızca başlıklı yapıştırmada işaretlenir.
-      const fallbackWeek = parseInt(document.getElementById('bulk-week')?.value, 10);
-      const withWeek = (m) => (m.week || isNaN(fallbackWeek) || fallbackWeek < 1)
-        ? m
-        : { ...m, week: fallbackWeek };
+      const fallbackRound = roundFieldsAsData(document.getElementById('bulk-week')?.value);
+      const withRound = (m) => (m.week || m.stage) ? m : { ...m, ...fallbackRound };
+      const withRounds = parsed.map(withRound);
 
-      pendingMatches = pendingMatches.concat(parsed.map(m => ({ ...withWeek(m), tournament: selectedTournament })));
+      // Hafta/aşama zorunlu: ne başlıktan ne seçiciden tur alamayan maç varsa dur.
+      const missing = withRounds.filter(m => !m.week && !m.stage).length;
+      if (missing) {
+        showToast(`${missing} maçın hafta/aşama bilgisi yok. Metne "1. Hafta" gibi başlık ekle ya da yukarıdaki Hafta/Aşama seçicisini kullan.`, 'error');
+        return;
+      }
+
+      pendingMatches = pendingMatches.concat(withRounds.map(m => ({ ...m, tournament: selectedTournament })));
       renderPendingMatches();
       showToast(`${parsed.length} maç ayrıştırıldı ve "${selectedTournament}" etiketiyle listeye eklendi.`, 'success');
     }
@@ -7334,8 +8046,17 @@
     }
 
     // ================== MAIN INIT ==================
+    // Admin maç ekleme formlarındaki hafta/aşama seçicilerini doldurur.
+    function initRoundSelectors() {
+      ['add-week', 'bulk-week'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select && !select.options.length) select.innerHTML = roundOptionsHTML(null);
+      });
+    }
+
     function init() {
       initMatchYearSelectors();
+      initRoundSelectors();
       auth.onAuthStateChanged(async (user) => {
         if (user) {
           currentUser = user;

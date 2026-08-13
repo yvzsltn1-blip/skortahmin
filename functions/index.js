@@ -1,7 +1,7 @@
 const admin = require("firebase-admin");
 const { logger } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
 
 admin.initializeApp();
@@ -240,7 +240,11 @@ async function sendToAllUsers(payload) {
 // kalır ve elle giriş akışı aynen çalışmaya devam eder.
 const NESINE_BULLETIN_URL = "https://cdnbulten.nesine.com/api/bulten/getprebultenfull";
 // Bülten yalnızca yakın tarihli maçları içerir; daha uzak maçlar için deneme yapılmaz.
-const ODDS_LOOKAHEAD_MS = 7 * 24 * 60 * 60 * 1000;
+// 12 gün: hafta bazlı fikstürde bir hafta, önceki hafta biter bitmez topluca
+// açılıyor ve haftanın son maçı ~10 gün ileride olabiliyor. Pencere 7 gün kalınca
+// kullanıcı tahmin girebildiği hâlde oranı göremiyordu (Samsunspor-Göztepe vakası:
+// maç 7,86 gün uzaktaydı, taramaya hiç girmiyordu). Pencere fikstürden geniş olmalı.
+const ODDS_LOOKAHEAD_MS = 12 * 24 * 60 * 60 * 1000;
 
 let bulletinCache = { at: 0, data: null };
 
@@ -430,7 +434,18 @@ async function retryMissingOddsTask() {
   }
 
   const missing = snap.docs.filter(doc => !doc.data().odds);
-  if (!missing.length) return;
+  // Nesine skor marketini (MTID 777) çoğu zaman maça birkaç gün kala açıyor;
+  // o ana kadar modelden üretilmiş tahmini oranlarla duruyoruz. Gerçek market
+  // açıldığı an tahmin onunla DEĞİŞTİRİLİR — Nesine oranı her zaman modelin
+  // önüne geçer. Market hiç açılmazsa tahmini oran olduğu gibi kalır.
+  // Değişim maç başına tek seferliktir: scoreEstimated kalkınca bir daha
+  // dokunulmaz, ayrıca sorgu zaten yalnızca BAŞLAMAMIŞ maçları kapsar — yani
+  // oynanmış maçların puanları asla geriye dönük oynamaz.
+  const estimated = snap.docs.filter(doc => {
+    const odds = doc.data().odds;
+    return odds && odds.scoreEstimated === true;
+  });
+  if (!missing.length && !estimated.length) return;
 
   let bulletin;
   try {
@@ -438,6 +453,38 @@ async function retryMissingOddsTask() {
   } catch (err) {
     logger.warn("Bulletin fetch failed in retry job.", { error: String(err) });
     return;
+  }
+
+  for (const doc of estimated) {
+    try {
+      const match = doc.data();
+      const event = findBulletinEvent(bulletin, match);
+      const fresh = event ? extractOdds(event) : null;
+      // fresh.scoreEstimated true ise Nesine hâlâ skor marketini açmamış demektir
+      // (extractOdds yine modele düşmüş) — o durumda mevcut tahmini koru.
+      if (!fresh || !fresh.score || fresh.scoreEstimated) continue;
+
+      // DİKKAT: set(merge:true) iç içe haritayı BİRLEŞTİRİR — tahmini skor
+      // anahtarları (Nesine'de olmayan skorlar) altta kalırdı. update() alanı
+      // bütünüyle değiştirdiği için oran haritası temiz yazılır; `scoreEstimated`
+      // de anahtarı hiç koymayarak düşer.
+      await doc.ref.update({
+        odds: {
+          source: "nesine",
+          eventNo: event.ENO || null,
+          eventCode: event.C || null,
+          ...fresh
+        },
+        oddsStatus: "found",
+        oddsUpgradedAt: FieldValue.serverTimestamp(),
+        oddsCheckedAt: FieldValue.serverTimestamp()
+      });
+      logger.info("Estimated score odds upgraded to real Nesine market.", {
+        matchId: doc.id, home: match.homeTeam, away: match.awayTeam
+      });
+    } catch (err) {
+      logger.warn("Odds upgrade failed for match.", { matchId: doc.id, error: String(err) });
+    }
   }
 
   for (const doc of missing) {
@@ -478,17 +525,258 @@ const DATE_SYNC_LOOKBEHIND_MS = 7 * 24 * 60 * 60 * 1000;
 // Yer tutucu (örn. pazar 18:00) gerçek tarihten Cuma-Pazartesi bandında sapabilir.
 const DATE_SYNC_TOLERANCE_MS = 5 * 24 * 60 * 60 * 1000;
 
+// Hafta bazlı maçlarda gün penceresi yerine "aktif hafta" kuralı geçerli:
+// aktif hafta = sonucu girilmemiş maçı olan en küçük hafta. Sıradaki haftanın
+// tarihi, hafta biter bitmez çekilebilsin diye aktif hafta + 1 de taranır.
+const DATE_SYNC_WEEK_LOOKAHEAD = 1;
+
+// ---- Hafta / aşama (round) modeli — app.js'teki kopyayla birebir aynı olmalı ----
+// `week` lig haftası (1..MAX_WEEK_NO), `stage` eleme turu adı. İkisi de tek bir
+// sıra sayısına (roundOrder) indirgenir; eleme turları hafta numaralarından
+// SONRA gelsin diye STAGE_ORDER_BASE'ten başlar.
+const KNOCKOUT_STAGES = ["Play-Off", "Son 16", "Çeyrek Final", "Yarı Final", "Final"];
+const STAGE_ORDER_BASE = 1000;
+const MAX_WEEK_NO = 60;
+
+function stageOrderOf(stage) {
+  const index = KNOCKOUT_STAGES.indexOf(String(stage || "").trim());
+  return index < 0 ? null : STAGE_ORDER_BASE + index;
+}
+
+function roundOrderOf(match) {
+  const stage = stageOrderOf(match && match.stage);
+  if (stage != null) return stage;
+  const week = Number(match && match.week);
+  return Number.isInteger(week) && week >= 1 && week <= MAX_WEEK_NO ? week : null;
+}
+
+function roundLabelFromOrder(order) {
+  if (order == null) return "";
+  return order >= STAGE_ORDER_BASE
+    ? (KNOCKOUT_STAGES[order - STAGE_ORDER_BASE] || "Eleme Turu")
+    : `${order}. Hafta`;
+}
+
+// Bir turun tüm maçlarını getirir (hafta no ya da aşama adı üzerinden).
+async function matchesOfRound(tournament, roundOrder) {
+  const query = roundOrder >= STAGE_ORDER_BASE
+    ? db.collection("matches").where("stage", "==", KNOCKOUT_STAGES[roundOrder - STAGE_ORDER_BASE])
+    : db.collection("matches").where("week", "==", roundOrder);
+  const snap = await query.get();
+  return snap.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(m => tournamentOf(m) === tournament);
+}
+
+async function activeWeekByTournament() {
+  const snap = await db.collection("matches").where("finalized", "==", false).get();
+  const active = {};
+  snap.docs.forEach(doc => {
+    const m = doc.data();
+    const order = roundOrderOf(m);
+    if (order == null) return;
+    // Ertelenen maç turu kilitlemez (app.js computeActiveWeeks ile aynı kural).
+    if (m.postponed === true) return;
+    const key = tournamentOf(m);
+    if (active[key] == null || order < active[key]) active[key] = order;
+  });
+  return active;
+}
+
 async function pendingTbdMatches() {
   const nowMs = Date.now();
-  const snap = await db.collection("matches").where("dateTbd", "==", true).get();
+  const [snap, activeWeeks] = await Promise.all([
+    db.collection("matches").where("dateTbd", "==", true).get(),
+    activeWeekByTournament()
+  ]);
   return snap.docs.filter(doc => {
     const m = doc.data();
     if (m.finalized) return false;
+    const order = roundOrderOf(m);
+    if (order != null) {
+      const active = activeWeeks[tournamentOf(m)];
+      return active == null || order <= active + DATE_SYNC_WEEK_LOOKAHEAD;
+    }
     const ms = m.datetime && m.datetime.toMillis ? m.datetime.toMillis() : null;
     return ms != null
       && ms > nowMs - DATE_SYNC_LOOKBEHIND_MS
       && ms < nowMs + DATE_SYNC_LOOKAHEAD_MS;
   });
+}
+
+// ---- Ofsayt.com fikstür yedeği ----
+// Nesine bülteni yalnızca yakın tarihli maçları taşır; bültende bulunamayan
+// hafta maçlarının resmi gün/saati Ofsayt lig sayfasındaki fikstür JSON'undan
+// okunur. Ofsayt resmi fikstür kaynağı olduğu için sonuç öneri olarak değil
+// doğrudan datetime'a yazılır (admin onayı beklemez).
+// Turnuva -> lig sayfası adresi eşlemesi settings/app.ofsaytFixtureUrls altında.
+// Ofsayt lig adresi iki GUID taşır: /futbol/lig/<slug>/<LİG-ID>/detay/puan-durumu/<SEZON-ID>
+// LİG-ID kalıcıdır, SEZON-ID her sezon değişir — sezon ekli adres bir yıl sonra
+// hâlâ eski sezonun fikstürünü döndürür. Sezon parçası atılınca sayfa her zaman
+// GÜNCEL sezona çözülür (doğrulandı: sezonsuz adres de 34 haftayı veriyor).
+const OFSAYT_GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeOfsaytFixtureUrl(rawUrl) {
+  const url = new URL(String(rawUrl || "").trim());
+  const parts = url.pathname.split("/").filter(Boolean);
+  const ligAt = parts.indexOf("lig");
+  // Beklenen biçim dışındaki adreslere dokunma (bozmaktansa olduğu gibi bırak).
+  if (ligAt < 0 || !OFSAYT_GUID_RE.test(parts[ligAt + 2] || "")) return url.toString();
+  url.pathname = "/" + parts.slice(0, ligAt + 3).concat("detay", "puan-durumu").join("/");
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+async function ofsaytFixtureUrlMap() {
+  const snap = await db.collection("settings").doc("app").get();
+  const map = snap.exists ? snap.data().ofsaytFixtureUrls : null;
+  return map && typeof map === "object" ? map : {};
+}
+
+function ofsaytFixtureDate(dateUtc) {
+  // "2026-08-16T18:00:00+03:00" — ofset string'in içinde, doğrudan ayrıştırılır.
+  const date = new Date(String(dateUtc || ""));
+  return isNaN(date.getTime()) ? null : date;
+}
+
+// ÖNEMLİ: Ofsayt sezonun TAMAMININ fikstürünü verir, ama programı henüz
+// açıklanmamış haftalara yer tutucu koyar — o haftanın bütün maçları TEK gün ve
+// TEK saatte görünür (Süper Lig'de tipik olarak hepsi 18:00). Programı açıklanmış
+// haftada maçlar birden fazla güne ve saate yayılır (ör. Cuma 21:30, Cumartesi 19:00).
+// Bu yüzden yalnızca "birden fazla farklı başlama zamanı olan" haftalar resmi
+// kabul edilir. Tek-zamanlı haftalar yok sayılır; tarihleri yaklaştıkça Nesine
+// bülteninden gelir (sezonun son haftası gerçekten tek saatte oynansa bile o
+// tarihte Nesine penceresine girmiş olur).
+function isAnnouncedOfsaytWeek(dates) {
+  return new Set(dates.map(date => date.getTime())).size > 1;
+}
+
+function ofsaytFixtureList(html) {
+  const fixtures = [];
+  const skippedWeeks = [];
+  for (const week of extractOfsaytWeeks(html)) {
+    const weekNo = parseInt(String((week && week.week) || ""), 10);
+    const weekFixtures = [];
+    for (const day of (week && week.dates) || []) {
+      for (const fixture of (day && day.fixtureOfDay) || []) {
+        const date = ofsaytFixtureDate(fixture.dateUtc);
+        const home = fixture.homeTeam && fixture.homeTeam.Name;
+        const away = fixture.awayTeam && fixture.awayTeam.Name;
+        if (!date || !home || !away) continue;
+        weekFixtures.push({
+          week: Number.isInteger(weekNo) ? weekNo : null,
+          home: normalizeTeamName(home),
+          away: normalizeTeamName(away),
+          date
+        });
+      }
+    }
+    if (weekFixtures.length && isAnnouncedOfsaytWeek(weekFixtures.map(f => f.date))) {
+      fixtures.push(...weekFixtures);
+    } else if (weekFixtures.length) {
+      skippedWeeks.push(String((week && week.week) || "?").trim());
+    }
+  }
+  if (skippedWeeks.length) {
+    logger.info("Ofsayt: programı açıklanmamış haftalar atlandı.", { weeks: skippedWeeks });
+  }
+  return fixtures;
+}
+
+function findOfsaytFixtureDate(fixtures, match) {
+  const home = normalizeTeamName(match.homeTeam);
+  const away = normalizeTeamName(match.awayTeam);
+  if (!home || !away) return null;
+  const same = (a, b) => a === b || a.includes(b) || b.includes(a);
+  const hits = fixtures.filter(f => same(f.home, home) && same(f.away, away));
+  if (!hits.length) return null;
+
+  // Hafta numarası varsa çift kayıt riskini eler (rövanş aynı eşleşmedir).
+  // Eleme turlarında Ofsayt hafta numarası vermediği için ad eşleşmesine düşülür.
+  const week = Number(match && match.week);
+  if (Number.isInteger(week) && week >= 1) {
+    const sameWeek = hits.filter(f => f.week === week);
+    if (sameWeek.length === 1) return sameWeek[0].date;
+    if (sameWeek.length > 1) return null;
+  }
+  return hits.length === 1 ? hits[0].date : null;
+}
+
+// Nesine'de bulunamayan maçlar için Ofsayt fikstürünü dener; bulunan tarihi
+// doğrudan uygular. Dönen değer uygulanan maç sayısıdır.
+async function applyOfsaytFixtureDates(docs, summary) {
+  if (!docs.length) return 0;
+  let urlMap;
+  try {
+    urlMap = await ofsaytFixtureUrlMap();
+  } catch (err) {
+    logger.warn("Ofsayt fixture URL map could not be read.", { error: String(err) });
+    return 0;
+  }
+
+  // Turnuva başına tek sayfa indirilir.
+  const byTournament = new Map();
+  docs.forEach(doc => {
+    const key = tournamentOf(doc.data());
+    if (!byTournament.has(key)) byTournament.set(key, []);
+    byTournament.get(key).push(doc);
+  });
+
+  let applied = 0;
+  for (const [tournament, tournamentDocs] of byTournament) {
+    const rawUrl = urlMap[tournament];
+    if (!rawUrl) continue;
+    let fixtures;
+    try {
+      // Kayıtlı adreste sezon GUID'i varsa burada da düşürülür — eski kayıtlar
+      // yeni sezonda sessizce geçen sezonun fikstürünü okumasın.
+      const url = validateOfsaytUrl(normalizeOfsaytFixtureUrl(rawUrl));
+      const response = await fetch(url, {
+        headers: {
+          "Accept": "text/html,*/*",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+      });
+      if (!response.ok) throw new Error(`Ofsayt HTTP ${response.status}`);
+      fixtures = ofsaytFixtureList(await response.text());
+    } catch (err) {
+      logger.warn("Ofsayt fixture fetch failed.", { tournament, error: String(err) });
+      continue;
+    }
+    if (!fixtures.length) continue;
+
+    for (const doc of tournamentDocs) {
+      const match = doc.data();
+      const date = findOfsaytFixtureDate(fixtures, match);
+      if (!date) continue;
+      try {
+        await doc.ref.set({
+          datetime: Timestamp.fromDate(date),
+          dateSource: "ofsayt",
+          dateTbd: FieldValue.delete(),
+          postponed: FieldValue.delete(),
+          proposedDatetime: FieldValue.delete(),
+          proposalStatus: FieldValue.delete(),
+          proposalSource: FieldValue.delete(),
+          proposalCheckedAt: FieldValue.delete()
+        }, { merge: true });
+        applied++;
+        summary.unmatched = Math.max(0, summary.unmatched - 1);
+        summary.details.push({
+          matchId: doc.id, match: teamLine(match), status: "ofsayt_applied",
+          proposed: date.toISOString()
+        });
+        logger.info("Fixture date applied from Ofsayt.", {
+          matchId: doc.id, tournament, home: match.homeTeam, away: match.awayTeam,
+          date: date.toISOString()
+        });
+      } catch (err) {
+        logger.warn("Ofsayt date write failed.", { matchId: doc.id, error: String(err) });
+      }
+    }
+  }
+  return applied;
 }
 
 // Henüz güncel önerisi olmayan maçlar (retry job'ının "çalışmaya değer mi" testi).
@@ -502,23 +790,25 @@ async function proposeFixtureDates(trigger) {
     trigger,
     checked: docs.length,
     proposed: 0,
+    applied: 0,
     unmatched: 0,
     error: null,
     details: []
   };
+  // Nesine bülteninde bulunamayanlar Ofsayt fikstürüne devredilir.
+  const unmatchedDocs = [];
 
   if (docs.length) {
-    let bulletin;
+    let bulletin = null;
     try {
       bulletin = await fetchNesineBulletin();
     } catch (err) {
+      // Bülten çekilemezse akış durmaz; tüm maçlar Ofsayt yedeğine düşer.
       logger.warn("Bulletin fetch failed in date sync.", { error: String(err) });
       summary.error = String(err);
-      await writeDateSyncSummary(summary);
-      return summary;
     }
 
-    for (const doc of docs) {
+    for (const doc of (bulletin ? docs : [])) {
       try {
         const match = doc.data();
         const label = teamLine(match);
@@ -526,6 +816,7 @@ async function proposeFixtureDates(trigger) {
         const eventTime = event ? nesineEventTime(event) : null;
         if (!eventTime) {
           summary.unmatched++;
+          unmatchedDocs.push(doc);
           summary.details.push({ matchId: doc.id, match: label, status: "unmatched" });
           continue;
         }
@@ -561,6 +852,13 @@ async function proposeFixtureDates(trigger) {
         logger.warn("Date proposal failed for match.", { matchId: doc.id, error: String(err) });
       }
     }
+
+    // Bülten hiç çekilemediyse tüm maçlar, çekildiyse yalnızca eşleşmeyenler
+    // Ofsayt fikstüründen tamamlanır.
+    const fallbackDocs = bulletin ? unmatchedDocs : docs;
+    if (!bulletin) summary.unmatched = docs.length;
+    summary.applied = await applyOfsaytFixtureDates(fallbackDocs, summary);
+    if (summary.applied) summary.error = null;
   }
 
   await writeDateSyncSummary(summary);
@@ -580,6 +878,39 @@ async function fixtureDateSyncWeeklyTask() {
   await proposeFixtureDates("weekly");
 }
 
+// Haftalık Ofsayt taraması (salı gecesi). proposeFixtureDates'ten farkı:
+// aktif hafta penceresine BAKMAZ — Ofsayt'ta programı açıklanmış TÜM haftaların
+// tarihlerini uygular. Ofsayt 2-3 hafta ileriyi yayınladığı için hafta sırası
+// geldiğinde tarih zaten yerinde olur; fikstür kapısı görünürlüğü yine tur tur
+// yönetir. Yer tutucu (tek-zamanlı) haftalar ofsaytFixtureList'te elenir.
+async function ofsaytFixtureSweepTask() {
+  const urlMap = await ofsaytFixtureUrlMap();
+  if (!Object.values(urlMap).some(Boolean)) {
+    logger.info("Ofsayt sweep atlandı: tanımlı fikstür adresi yok.");
+    return;
+  }
+
+  const snap = await db.collection("matches").where("dateTbd", "==", true).get();
+  const docs = snap.docs.filter(doc => !doc.data().finalized);
+  if (!docs.length) return;
+
+  const summary = {
+    trigger: "ofsayt-weekly",
+    checked: docs.length,
+    proposed: 0,
+    applied: 0,
+    unmatched: 0,
+    error: null,
+    details: []
+  };
+  summary.applied = await applyOfsaytFixtureDates(docs, summary);
+  summary.unmatched = docs.length - summary.applied;
+  await writeDateSyncSummary(summary);
+  logger.info("Ofsayt fixture sweep completed.", {
+    checked: summary.checked, applied: summary.applied
+  });
+}
+
 // Çarşamba çekilemezse (bülten gecikmesi vb.) 12 saatte bir tekrar dener;
 // penceredeki tüm TBD maçların güncel önerisi varsa bülteni hiç çekmez.
 async function fixtureDateSyncRetryTask() {
@@ -587,6 +918,192 @@ async function fixtureDateSyncRetryTask() {
   if (!docs.some(doc => needsProposal(doc.data()))) return;
   await proposeFixtureDates("retry");
 }
+
+// Haftanın SON maçının sonucu girilince (finalized false -> true) sıradaki hafta
+// aktif hale gelir; tarihleri hemen çekilsin diye senkron tetiklenir.
+// Nesine'de yoksa Ofsayt fikstüründen doğrudan uygulanır.
+exports.syncNextWeekOnFinalize = onDocumentUpdated({
+  document: "matches/{matchId}",
+  region: REGION
+}, async (event) => {
+  const before = event.data.before.data();
+  const after = event.data.after.data();
+  if (before.finalized === true || after.finalized !== true) return;
+
+  const order = roundOrderOf(after);
+  if (order == null) return;
+  const tournament = tournamentOf(after);
+
+  // Tur gerçekten bitti mi? Ertelenen maçlar hariç sonucu girilmemiş maç kaldıysa
+  // bekle (ertelenen maç sonraki turu kilitlemez; hafta bonusu ise onu bekler).
+  const rest = await matchesOfRound(tournament, order);
+  if (rest.some(m => m.finalized !== true && m.postponed !== true)) return;
+
+  logger.info("Round completed, syncing next round fixture dates.", { tournament, order });
+  try {
+    await proposeFixtureDates(`round-complete:${tournament}:${order}`);
+  } catch (err) {
+    logger.warn("Next-round date sync failed.", { tournament, order, error: String(err) });
+  }
+});
+
+// ================== HAFTA BONUSU ==================
+// Bir turun (hafta ya da eleme aşaması) TÜM maçları sonuçlandığında, o turda
+// maç sonucunu (1/X/2) doğru bilen sayısına göre ek puan verilir. Kural
+// turnuva bazlıdır: settings/app.weekBonus[turnuva] = { enabled, tiers:[{correct,points}] }
+// Örn. Süper Lig: 9 doğru → +30, 8 → +20, 7 → +10. Tanımlı olmayan turnuvada bonus yoktur.
+//
+// Ertelenen maç turu "tamamlanmamış" bırakır: 8/8 bilen bir oyuncunun bonusu,
+// ertelenen maç oynanıp sonucu girilene kadar VERİLMEZ; o an tur tamamlanır ve
+// bonus 9 maç üzerinden yeniden hesaplanır.
+//
+// Sonuçlar weekBonus/{turnuva__roundOrder} dokümanında saklanır ve puan farkı
+// (yeni - eski) settings/leaderboard toplamlarına increment olarak işlenir —
+// böylece sonuç düzeltilirse/temizlenirse bonus da kendiliğinden düzelir.
+
+function weekBonusDocId(tournament, roundOrder) {
+  return `${encodeURIComponent(tournament)}__${roundOrder}`;
+}
+
+async function weekBonusTiers(tournament) {
+  const snap = await db.collection("settings").doc("app").get();
+  const all = snap.exists ? snap.data().weekBonus : null;
+  const config = all && typeof all === "object" ? all[tournament] : null;
+  if (!config || config.enabled === false) return null;
+  const tiers = (Array.isArray(config.tiers) ? config.tiers : [])
+    .map(tier => ({ correct: Number(tier.correct), points: Number(tier.points) }))
+    .filter(tier => Number.isInteger(tier.correct) && tier.correct > 0 && Number.isFinite(tier.points))
+    .sort((a, b) => b.correct - a.correct);
+  return tiers.length ? tiers : null;
+}
+
+function weekBonusPointsFor(correct, tiers) {
+  const tier = tiers.find(t => correct >= t.correct);
+  return tier ? tier.points : 0;
+}
+
+async function evaluateWeekBonus(tournament, roundOrder) {
+  const bonusRef = db.collection("weekBonus").doc(weekBonusDocId(tournament, roundOrder));
+  const [tiers, prevSnap] = await Promise.all([
+    weekBonusTiers(tournament),
+    bonusRef.get()
+  ]);
+  const prevAwards = prevSnap.exists ? (prevSnap.data().awards || {}) : {};
+  // Kural yok ve daha önce de verilmiş bonus yok → yapacak bir şey yok.
+  if (!tiers && !prevSnap.exists) return null;
+
+  const roundMatches = await matchesOfRound(tournament, roundOrder);
+  const complete = roundMatches.length > 0
+    && roundMatches.every(m => m.finalized === true && hasResult(m));
+
+  const awards = {};
+  if (tiers && complete) {
+    // Puanlar dondurulmuş `scoreboard`dan okunur — tahmin koleksiyonuna hiç
+    // gidilmez (arşiv okuma maliyeti sıfır).
+    const correctCounts = {};
+    const names = {};
+    roundMatches.forEach(match => {
+      const actual = Math.sign(match.homeScore - match.awayScore);
+      (Array.isArray(match.scoreboard) ? match.scoreboard : []).forEach(entry => {
+        if (!entry || !entry.uid || entry.h == null || entry.a == null) return;
+        names[entry.uid] = entry.name || names[entry.uid] || "Oyuncu";
+        if (Math.sign(entry.h - entry.a) === actual) {
+          correctCounts[entry.uid] = (correctCounts[entry.uid] || 0) + 1;
+        }
+      });
+    });
+    Object.entries(correctCounts).forEach(([uid, correct]) => {
+      const points = weekBonusPointsFor(correct, tiers);
+      if (points) awards[uid] = { name: names[uid] || "Oyuncu", correct, points };
+    });
+  }
+
+  const delta = {};
+  Object.entries(prevAwards).forEach(([uid, award]) => {
+    delta[uid] = (delta[uid] || 0) - (Number(award && award.points) || 0);
+  });
+  Object.entries(awards).forEach(([uid, award]) => {
+    delta[uid] = (delta[uid] || 0) + award.points;
+  });
+  const changedUids = Object.entries(delta).filter(([, d]) => d !== 0);
+
+  const batch = db.batch();
+  batch.set(bonusRef, {
+    tournament,
+    roundOrder,
+    roundLabel: roundLabelFromOrder(roundOrder),
+    matchCount: roundMatches.length,
+    complete,
+    awards,                       // merge YOK: kaldırılan kullanıcılar dokümandan da düşer
+    updatedAt: FieldValue.serverTimestamp()
+  });
+
+  if (changedUids.length) {
+    const overall = {};
+    const perTournament = {};
+    changedUids.forEach(([uid, d]) => {
+      overall[uid] = FieldValue.increment(d);
+      perTournament[uid] = FieldValue.increment(d);
+    });
+    batch.set(db.collection("settings").doc("leaderboard"), {
+      totals: overall,
+      totalsByTournament: { [tournament]: perTournament },
+      archiveVersion: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  await batch.commit();
+
+  if (changedUids.length) {
+    logger.info("Week bonus applied.", {
+      tournament, roundOrder, complete,
+      winners: Object.keys(awards).length,
+      changed: changedUids.length
+    });
+  }
+  return { awards, complete };
+}
+
+// Bonusu etkileyebilecek bir alan değişti mi? (gereksiz yeniden hesabı önler)
+function bonusRelevantChange(before, after) {
+  return before.finalized !== after.finalized
+    || before.homeScore !== after.homeScore
+    || before.awayScore !== after.awayScore
+    || roundOrderOf(before) !== roundOrderOf(after)
+    || tournamentOf(before) !== tournamentOf(after)
+    || JSON.stringify(before.scoreboard || []) !== JSON.stringify(after.scoreboard || []);
+}
+
+// Maç yazıldığında (oluştur/güncelle/sil) ilgili tur(lar)ın bonusunu tazeler.
+// Yalnızca weekBonus + settings/leaderboard yazar, matches'a dokunmaz → döngü yok.
+exports.weekBonusOnMatchWrite = onDocumentWritten({
+  document: "matches/{matchId}",
+  region: REGION
+}, async (event) => {
+  const before = event.data.before.exists ? event.data.before.data() : null;
+  const after = event.data.after.exists ? event.data.after.data() : null;
+  if (before && after && !bonusRelevantChange(before, after)) return;
+
+  // Tur/turnuva değiştiyse hem eski hem yeni kova yeniden hesaplanır.
+  const targets = new Map();
+  [before, after].forEach(match => {
+    if (!match) return;
+    const order = roundOrderOf(match);
+    if (order == null) return;
+    const tournament = tournamentOf(match);
+    targets.set(`${tournament}|${order}`, { tournament, order });
+  });
+
+  for (const target of targets.values()) {
+    try {
+      await evaluateWeekBonus(target.tournament, target.order);
+    } catch (err) {
+      logger.warn("Week bonus evaluation failed.", {
+        tournament: target.tournament, order: target.order, error: String(err)
+      });
+    }
+  }
+});
 
 // Admin panelindeki "Nesine'den Tarihleri Çek" butonunun ucu
 // (nesineHealthCheck ile aynı desen: public onRequest + anında sonuç).
@@ -596,8 +1113,21 @@ exports.fixtureDateSyncNow = onRequest({
   cors: true
 }, async (req, res) => {
   try {
+    // Önce yakın pencere (Nesine öncelikli), sonra Ofsayt'ta programı açıklanmış
+    // TÜM haftaların tam taraması — admin butonu her iki kaynağı da kapsasın.
     const summary = await proposeFixtureDates("manual");
-    res.json({ ok: true, ...summary });
+    let sweptApplied = 0;
+    try {
+      const before = summary.applied || 0;
+      await ofsaytFixtureSweepTask();
+      const sweepSnap = await db.collection("settings").doc("fixtureSync").get();
+      const swept = sweepSnap.exists ? sweepSnap.data() : {};
+      sweptApplied = swept.trigger === "ofsayt-weekly" ? (Number(swept.applied) || 0) : 0;
+      summary.applied = before + sweptApplied;
+    } catch (err) {
+      logger.warn("Manual Ofsayt sweep failed.", { error: String(err) });
+    }
+    res.json({ ok: true, ...summary, sweptApplied });
   } catch (err) {
     logger.warn("Manual fixture date sync failed.", { error: String(err) });
     res.status(500).json({ ok: false, error: String(err) });
@@ -1134,19 +1664,20 @@ async function runIfDue(state, key, minIntervalMs, task) {
   return true;
 }
 
-// "her çarşamba 12:00" karşılığı: İstanbul saatiyle çarşamba 12:00'den sonraki
-// ilk tetiklemede koşar, o hafta bir daha koşmaz.
-function isWeeklySlot(state) {
+// "her <gün> <saat>:00" karşılığı: İstanbul saatiyle o güne/saate ulaşıldıktan
+// sonraki ilk tetiklemede koşar, o hafta bir daha koşmaz. (Ana job 30 dakikada
+// bir tetiklendiği için koşu, hedef saatten en fazla ~30 dk sonra gerçekleşir.)
+function isWeeklySlotFor(state, stateKey, weekday, hour) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: TIME_ZONE,
     weekday: "short",
     hour: "2-digit",
     hour12: false
   }).formatToParts(new Date());
-  const weekday = parts.find(p => p.type === "weekday").value;
-  const hour = Number(parts.find(p => p.type === "hour").value);
-  if (weekday !== "Wed" || hour < 12) return false;
-  const last = state.fixtureDateSyncWeekly;
+  const today = parts.find(p => p.type === "weekday").value;
+  const nowHour = Number(parts.find(p => p.type === "hour").value);
+  if (today !== weekday || nowHour < hour) return false;
+  const last = state[stateKey];
   const lastMs = last && last.toMillis ? last.toMillis() : 0;
   return Date.now() - lastMs > 6 * 24 * 60 * 60 * 1000;
 }
@@ -1174,13 +1705,20 @@ exports.scheduledTasks = onSchedule({
     }
   }
 
-  if (isWeeklySlot(state)) {
+  // Haftalık slotlar: salı 00:00 Ofsayt taraması (Ofsayt haftanın programını
+  // hafta başında yayınlıyor), çarşamba 12:00 Nesine ana koşusu.
+  const weeklySlots = [
+    ["ofsaytFixtureSweep", "Tue", 0, ofsaytFixtureSweepTask],
+    ["fixtureDateSyncWeekly", "Wed", 12, fixtureDateSyncWeeklyTask]
+  ];
+  for (const [key, weekday, hour, task] of weeklySlots) {
+    if (!isWeeklySlotFor(state, key, weekday, hour)) continue;
     try {
-      await fixtureDateSyncWeeklyTask();
+      await task();
       await db.collection("settings").doc(SCHEDULER_STATE_DOC)
-        .set({ fixtureDateSyncWeekly: FieldValue.serverTimestamp() }, { merge: true });
+        .set({ [key]: FieldValue.serverTimestamp() }, { merge: true });
     } catch (err) {
-      logger.error("Scheduled task failed.", { task: "fixtureDateSyncWeekly", error: String(err) });
+      logger.error("Scheduled task failed.", { task: key, error: String(err) });
     }
   }
 });

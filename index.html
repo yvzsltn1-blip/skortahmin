@@ -518,10 +518,10 @@
               </select>
             </div>
             <div class="bulk-year-field">
-              <label class="form-label" for="bulk-week">Hafta no <span style="opacity:.6;">(ops.)</span></label>
-              <input id="bulk-week" type="number" min="1" max="60" placeholder="—" class="input-field">
+              <label class="form-label" for="bulk-week">Hafta / Aşama <span style="opacity:.6;">(zorunlu)</span></label>
+              <select id="bulk-week" class="input-field"></select>
             </div>
-            <p class="bulk-year-hint">Metinde yıl yoksa bu seçim uygulanır; tercihin hatırlanır. Metinde "1. Hafta" gibi başlıklar varsa haftalar otomatik algılanır ve tarihleri Nesine'den doğrulanana kadar "tarih onaylanacak" işaretlenir.</p>
+            <p class="bulk-year-hint">Metinde yıl yoksa bu seçim uygulanır; tercihin hatırlanır. Metinde "1. Hafta", "Çeyrek Final" gibi başlıklar varsa hafta/aşama otomatik algılanır ve tarihleri doğrulanana kadar "tarih onaylanacak" işaretlenir. Başlıksız yapıştırmalarda buradaki seçim tüm maçlara uygulanır — <strong>her maçın hafta/aşama bilgisi olmak zorunda</strong>.</p>
             <div class="admin-btn-group bulk-actions">
               <button onclick="parseAndAddBulk()" class="btn btn-primary btn-sm">Ayrıştır ve Ekle</button>
               <button onclick="clearBulkTextarea()" class="btn btn-secondary btn-sm">Temizle</button>
@@ -562,8 +562,8 @@
               <input id="add-away" type="text" placeholder="Deplasman" class="input-field">
             </div>
             <div class="form-col">
-              <label class="form-label">Hafta (ops.)</label>
-              <input id="add-week" type="number" min="1" max="60" placeholder="—" class="input-field">
+              <label class="form-label">Hafta / Aşama</label>
+              <select id="add-week" class="input-field"></select>
             </div>
             <div class="form-col btn-col quick-add-action">
               <button onclick="addMatchToPending()" class="btn btn-secondary">Listeye Ekle</button>
@@ -608,10 +608,12 @@
       <div class="admin-card">
         <h3 class="admin-card-title">🗓️ Fikstür Penceresi</h3>
         <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          <strong>Yalnızca hafta numarası olmayan maçlar için geçerlidir</strong> (kupa, hazırlık vb.):
           Maçlar sayfasında önümüzdeki kaç günün maçlarının listeleneceğini belirler.
           Pencerenin dışında kalan maçlar gizlenmez — tarihi yaklaştıkça otomatik görünür;
-          oynanmış maçlar Arşiv'de kalır. Tarihi belli olmayan (TBD) maçlar bu ayardan
-          bağımsız olarak her zaman listelenir. Değişiklik tüm kullanıcılarda anında geçerli olur.
+          oynanmış maçlar Arşiv'de kalır. Hafta numarası olan lig maçları bu ayardan bağımsızdır:
+          sadece aktif hafta listelenir, hafta bitince sıradaki hafta açılır.
+          Değişiklik tüm kullanıcılarda anında geçerli olur.
         </p>
         <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
           <label for="upcoming-window-select" class="section-subtitle" style="margin: 0;">Gösterim aralığı:</label>
@@ -621,16 +623,34 @@
         <p id="upcoming-window-hint" class="section-subtitle" style="margin-top: 0.6rem;"></p>
       </div>
 
-      <!-- Fixture date proposals (Nesine) -->
+      <!-- Fixture date proposals (Nesine + Ofsayt) -->
       <div class="admin-card">
-        <h3 class="admin-card-title">📅 Tarih Önerileri (Nesine)</h3>
+        <h3 class="admin-card-title">📅 Tarih Önerileri (Nesine + Ofsayt)</h3>
         <p class="section-subtitle" style="margin-bottom: 0.75rem;">
-          Hafta bazlı eklenen (tarihi henüz resmen açıklanmamış) maçların gerçek gün/saati
-          her çarşamba Nesine bülteninden otomatik denenir; bulunamazsa 12 saatte bir tekrar denenir.
-          Bulunan tarihler burada onayını bekler — onaylayana kadar maçın tarihi değişmez.
+          Fikstür <strong>hafta hafta</strong> açılır: kullanıcılar yalnızca aktif haftanın maçlarını görür.
+          Haftanın son maçının sonucu girildiği anda sıradaki hafta aktif olur ve tarihleri otomatik çekilir —
+          önce Nesine bülteni denenir (bulunan tarih burada <em>onayını bekler</em>), bulunamazsa turnuvanın
+          Ofsayt fikstüründen <em>doğrudan uygulanır</em>. Tarihler netleşmeden hafta listelenmez.
         </p>
-        <button id="date-sync-btn" onclick="requestFixtureDateSync()" class="btn btn-primary" style="width: auto;">🔄 Nesine'den Tarihleri Çek</button>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          <button id="date-sync-btn" onclick="requestFixtureDateSync()" class="btn btn-primary" style="width: auto;">🔄 Tarihleri Çek (Nesine + Ofsayt)</button>
+          <button onclick="toggleOfsaytFixtureUrls()" class="btn btn-secondary" style="width: auto;">🔗 Ofsayt Fikstür Adresleri</button>
+        </div>
+        <div id="ofsayt-fixture-urls" style="margin-top: 0.7rem;"></div>
         <div id="date-proposals-list" style="margin-top: 0.9rem;"></div>
+      </div>
+
+      <!-- Week bonus rules -->
+      <div class="admin-card">
+        <h3 class="admin-card-title">🏅 Hafta Bonusu</h3>
+        <p class="section-subtitle" style="margin-bottom: 0.75rem;">
+          Bir turun (hafta ya da eleme aşaması) <strong>tüm maçları sonuçlandığında</strong>,
+          o turda maç sonucunu (1/X/2) doğru bilen sayısına göre ek puan verilir.
+          Örn. Süper Lig: 9 doğru → +30, 8 → +20, 7 → +10. Sadece burada tanımlı turnuvalarda geçerlidir.
+          <strong>Ertelenen maç varsa</strong> bonus beklemeye alınır; o maç oynanıp sonucu girilince tur
+          tamamlanır ve bonus geriye dönük dağıtılır.
+        </p>
+        <div id="week-bonus-rules"></div>
       </div>
 
       <!-- Season bonus predictions -->
